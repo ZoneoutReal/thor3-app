@@ -469,7 +469,8 @@ export interface StrengthDay {
   title?: string; // e.g. "Work Capacity Circuit"
   kind: "table" | "ladder" | "circuit";
   note?: string;
-  rounds?: string; // circuits only, e.g. "10 Rounds"
+  rounds?: string; // circuits only, display string e.g. "10 Rounds"
+  roundsByWeek?: number[]; // circuits only, round count per week column
   rows?: StrengthRow[]; // table & circuit
   ladder?: string[][]; // ladder only: [step][weekIndex]
 }
@@ -612,6 +613,7 @@ export const strengthBlocks: StrengthBlock[] = [
         title: "Dumbbell Circuit Day",
         kind: "circuit",
         rounds: "W9: 3 Rounds  ·  W10: 2 Rounds",
+        roundsByWeek: [3, 2],
         note: "Use dumbbells that are 10% of your bodyweight in each hand. Rest 2-3 min between rounds.",
         rows: [
           { name: "DB Upright Row", prescription: "10" },
@@ -636,6 +638,7 @@ export const strengthBlocks: StrengthBlock[] = [
         title: "Pull / Push / Sit Circuit",
         kind: "circuit",
         rounds: "10 Rounds",
+        roundsByWeek: [10, 10],
         note: "No rest between exercises or rounds.",
         rows: [
           { name: "Pull-Ups", prescription: "3" },
@@ -651,4 +654,55 @@ export const strengthBlocks: StrengthBlock[] = [
 // Which strength block covers a given program week.
 export function getStrengthBlockForWeek(week: number): StrengthBlock | undefined {
   return strengthBlocks.find((b) => b.weeks.includes(week));
+}
+
+// The prescription for one week column of a row (arrays hold one entry per week,
+// a plain string is uniform across the block).
+export function prescriptionForWeek(row: StrengthRow, weekIndex: number): string {
+  return typeof row.prescription === "string"
+    ? row.prescription
+    : row.prescription[weekIndex] ?? "";
+}
+
+export interface ParsedSet {
+  label: string; // target shown on the set row, e.g. "15", "12 ea", "MAX", "0:45"
+  seconds?: number; // present when the target is a duration (timed set)
+}
+
+function durationToSeconds(s: string): number | undefined {
+  const m = s.match(/(\d+):(\d{2})/);
+  return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : undefined;
+}
+
+// Expand a single per-week prescription into individual, loggable sets.
+// `rounds`, when given (circuit exercises), overrides the set count.
+export function parseStrengthSets(prescription: string, rounds?: number): ParsedSet[] {
+  const p = prescription.trim();
+
+  if (rounds && rounds > 0) {
+    return Array.from({ length: rounds }, () => ({ label: p }));
+  }
+
+  // "Nx<target>" e.g. 4x15, 3x12 ea, 4x MAX, 4 x 0:45 ea
+  const mult = p.match(/^(\d+)\s*x\s*(.+)$/i);
+  if (mult) {
+    const n = parseInt(mult[1], 10);
+    const target = mult[2].trim();
+    const seconds = durationToSeconds(target);
+    return Array.from({ length: n }, () => ({ label: target, seconds }));
+  }
+
+  // comma list e.g. "5+, 5+, MAX" or "20, 20, MAX"
+  if (p.includes(",")) {
+    return p.split(",").map((t) => {
+      const label = t.trim();
+      return { label, seconds: durationToSeconds(label) };
+    });
+  }
+
+  // single timed value e.g. "0:30", "10:00"
+  const seconds = durationToSeconds(p);
+  if (seconds != null) return [{ label: p, seconds }];
+
+  return [{ label: p }];
 }

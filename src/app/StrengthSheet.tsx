@@ -8,6 +8,7 @@ import {
   type StrengthDay,
   type StrengthBlock,
 } from "@/lib/program-data";
+import { WorkoutMode } from "./WorkoutMode";
 
 function DayHeader({ day }: { day: StrengthDay }) {
   return (
@@ -272,14 +273,17 @@ function WarmUp() {
 export function StrengthSheet({
   onClose,
   initialWeek,
+  programId = "10week",
 }: {
   onClose: () => void;
   initialWeek?: number;
+  programId?: string;
 }) {
   const initialBlock = initialWeek != null ? getStrengthBlockForWeek(initialWeek) : undefined;
   const [activeTitle, setActiveTitle] = useState(
     initialBlock?.title ?? strengthBlocks[0].title
   );
+  const [mode, setMode] = useState<"workout" | "reference">("workout");
   const block = strengthBlocks.find((b) => b.title === activeTitle) ?? strengthBlocks[0];
   const highlightWeek = block.weeks.includes(initialWeek ?? -1) ? initialWeek : undefined;
 
@@ -322,27 +326,51 @@ export function StrengthSheet({
             ))}
           </div>
         </div>
+        {/* Mode toggle */}
+        <div className="mx-auto max-w-lg px-4 pb-3">
+          <div className="flex gap-1 rounded-lg bg-[var(--card)] p-1">
+            {(["workout", "reference"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className="flex-1 rounded-md py-1.5 text-xs font-semibold capitalize transition-colors"
+                style={{
+                  backgroundColor: mode === m ? "var(--accent)" : "transparent",
+                  color: mode === m ? "#000" : "var(--muted)",
+                }}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
       </header>
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-lg space-y-5 px-4 py-4">
           <WarmUp />
-          {block.days.map((day) => (
-            <section key={day.label}>
-              <DayHeader day={day} />
-              {day.kind === "table" && (
-                <TableDay day={day} block={block} highlightWeek={highlightWeek} />
-              )}
-              {day.kind === "ladder" && (
-                <LadderDay day={day} block={block} highlightWeek={highlightWeek} />
-              )}
-              {day.kind === "circuit" && <CircuitDay day={day} />}
-            </section>
-          ))}
-          <p className="pt-1 text-center text-xs text-[var(--muted)]">
-            Strength days rotate through the days above. Reps periodize across the block.
-          </p>
+          {mode === "workout" ? (
+            <WorkoutMode block={block} programId={programId} initialWeek={initialWeek} />
+          ) : (
+            <>
+              {block.days.map((day) => (
+                <section key={day.label}>
+                  <DayHeader day={day} />
+                  {day.kind === "table" && (
+                    <TableDay day={day} block={block} highlightWeek={highlightWeek} />
+                  )}
+                  {day.kind === "ladder" && (
+                    <LadderDay day={day} block={block} highlightWeek={highlightWeek} />
+                  )}
+                  {day.kind === "circuit" && <CircuitDay day={day} />}
+                </section>
+              ))}
+              <p className="pt-1 text-center text-xs text-[var(--muted)]">
+                Strength days rotate through the days above. Reps periodize across the block.
+              </p>
+            </>
+          )}
         </div>
       </div>
     </div>
