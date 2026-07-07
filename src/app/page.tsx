@@ -9,6 +9,7 @@ import {
   type WorkoutType,
 } from "@/lib/program-data";
 import { subscribeUser, unsubscribeUser, sendNotification } from "./actions";
+import { StrengthSheet } from "./StrengthSheet";
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -309,11 +310,13 @@ function DayCard({
   weekNum,
   isDone,
   onToggle,
+  onOpenStrength,
 }: {
   workout: DayWorkout;
   weekNum: number;
   isDone: boolean;
   onToggle: () => void;
+  onOpenStrength: (week: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const meta = TYPE_META[workout.type];
@@ -389,15 +392,31 @@ function DayCard({
                   {session.label}
                 </p>
               )}
-              {session.description.map((line, li) =>
-                line === "" ? (
-                  <div key={li} className="h-2" />
-                ) : (
+              {session.description.map((line, li) => {
+                if (line === "") return <div key={li} className="h-2" />;
+                if (/strength training/i.test(line)) {
+                  return (
+                    <button
+                      key={li}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenStrength(weekNum);
+                      }}
+                      className="mt-1 inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors"
+                      style={{ backgroundColor: "var(--accent)" + "20", color: "var(--accent)" }}
+                    >
+                      <span>{TYPE_META.strength.icon}</span>
+                      <span>View Strength Workout</span>
+                      <span aria-hidden>&#8594;</span>
+                    </button>
+                  );
+                }
+                return (
                   <p key={li} className="text-sm leading-relaxed text-[var(--foreground)]">
                     {line}
                   </p>
-                )
-              )}
+                );
+              })}
             </div>
           ))}
           <button
@@ -443,6 +462,7 @@ export default function Home() {
   const { deferredPrompt, isInstalled, isIOS, install } = useInstallPrompt();
   const [showInstallBanner, setShowInstallBanner] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [strengthWeek, setStrengthWeek] = useState<number | null>(null);
 
   const [weekIdx, setWeekIdx] = useState(0);
   const program = getProgram("10week")!;
@@ -465,6 +485,15 @@ export default function Home() {
               <p className="text-xs text-[var(--muted)]">SFAS Conditioning</p>
             </div>
             <div className="flex items-center gap-3">
+              <button
+                onClick={() => setStrengthWeek(week.week)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--card)] text-[var(--muted)] transition-colors hover:bg-[var(--card-hover)] hover:text-[var(--foreground)]"
+                aria-label="Strength sheet"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                  <path d="M4 9v6 M7 6v12 M17 6v12 M20 9v6 M7 12h10" />
+                </svg>
+              </button>
               <button
                 onClick={() => setShowSettings(true)}
                 className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--card)] text-[var(--muted)] transition-colors hover:bg-[var(--card-hover)] hover:text-[var(--foreground)]"
@@ -578,6 +607,7 @@ export default function Home() {
                 weekNum={week.week}
                 isDone={isDone(week.week, day.day)}
                 onToggle={() => toggle(week.week, day.day)}
+                onOpenStrength={setStrengthWeek}
               />
             ))}
           </div>
@@ -591,6 +621,11 @@ export default function Home() {
 
       {/* Notification Settings */}
       {showSettings && <NotificationSettings onClose={() => setShowSettings(false)} />}
+
+      {/* Strength Sheet */}
+      {strengthWeek !== null && (
+        <StrengthSheet initialWeek={strengthWeek} onClose={() => setStrengthWeek(null)} />
+      )}
     </div>
   );
 }

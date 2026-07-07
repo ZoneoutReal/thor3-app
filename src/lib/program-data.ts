@@ -450,3 +450,205 @@ export const TYPE_META: Record<WorkoutType, { label: string; color: string; icon
   bike: { label: "Bike", color: "#059669", icon: "\u{1F6B4}" },
   mixed: { label: "Multi", color: "#BE185D", icon: "⚡" },
 };
+
+// --- Strength Sheet (the "attached sheet" referenced on strength days) ---
+
+export interface StrengthRow {
+  // Superset grouping letter (B/C/D/E...) mirrored from the source sheet; rows
+  // that share a letter are performed as a superset before the group's rest.
+  group?: string;
+  name: string;
+  // Full per-week prescription. A single string means "same every week in the
+  // block"; an array holds one entry per week column (aligned to weekLabels).
+  prescription: string | string[];
+  rest?: string;
+}
+
+export interface StrengthDay {
+  label: string; // "Day 1", "Day 2", "Day 3"
+  title?: string; // e.g. "Work Capacity Circuit"
+  kind: "table" | "ladder" | "circuit";
+  note?: string;
+  rounds?: string; // circuits only, e.g. "10 Rounds"
+  rows?: StrengthRow[]; // table & circuit
+  ladder?: string[][]; // ladder only: [step][weekIndex]
+}
+
+export interface StrengthBlock {
+  title: string; // "Weeks 1-4"
+  weeks: number[];
+  weekLabels: string[];
+  days: StrengthDay[];
+}
+
+// Performed over 10-15 yards before every strength day.
+export const DYNAMIC_WARMUP: string[] = [
+  "Walking Lunge w/ Twist",
+  "Walking Lunge w/ Overhead Reach",
+  "Lateral Lunge",
+  "Walking Lunge > Elbow to Instep > Twisting Overhead Reach",
+  "Knee Pull to Chest",
+  "Heel Pull to Butt",
+  "Leg Cradle",
+  "Frankensteins",
+  "Lateral Shuffle",
+  "Carioca",
+  "High Knee Run",
+  "Power Skipping",
+  "T, Y, W & L's x 10 each",
+];
+
+export const strengthBlocks: StrengthBlock[] = [
+  {
+    title: "Weeks 1-4",
+    weeks: [1, 2, 3, 4],
+    weekLabels: ["W1", "W2", "W3", "W4"],
+    days: [
+      {
+        label: "Day 1",
+        kind: "table",
+        rows: [
+          { group: "B", name: "Front Squat", prescription: ["4x15", "4x12", "4x10", "4x8"] },
+          { group: "B", name: "Lat Pulldown", prescription: ["4x15", "4x12", "4x10", "4x8"], rest: "1:30" },
+          { group: "C", name: "Barbell Split Squat", prescription: ["3x12 ea", "3x12 ea", "3x10 ea", "3x10 ea"] },
+          { group: "C", name: "Barbell Bent-Over Row", prescription: ["3x12", "3x12", "3x10", "3x10"] },
+          { group: "C", name: "Seated Medball Side-to-Side Twists", prescription: "3x12 ea", rest: "1:00" },
+          { group: "D", name: "Single Leg Piston Squats to Bench", prescription: "3x10 ea" },
+          { group: "D", name: "Pull-Ups", prescription: "5+, 5+, MAX" },
+          { group: "D", name: "Push-Ups", prescription: "20+, 20+, MAX", rest: "0:30" },
+          { group: "E", name: "Back Extension", prescription: ["3x10", "3x12", "3x12", "3x15"] },
+          { group: "E", name: "DB Combo Raise", prescription: "3x5" },
+          { group: "E", name: "Planks (Front, Left, Right)", prescription: ["0:30", "0:40", "0:50", "1:00"], rest: "0:30" },
+          { group: "F", name: "Foam Rolling & Stretching", prescription: "10:00" },
+        ],
+      },
+      {
+        label: "Day 2",
+        kind: "table",
+        rows: [
+          { group: "B", name: "Kettlebell Deadlift", prescription: ["4x15", "4x12", "4x10", "4x8"] },
+          { group: "B", name: "DB Flat Bench Press", prescription: ["4x15", "4x12", "4x10", "4x8"], rest: "1:30" },
+          { group: "C", name: "Hamstring Curls", prescription: ["3x12", "3x12", "3x10", "3x10"] },
+          { group: "C", name: "Single Arm DB Incline Bench Press", prescription: ["3x12 ea", "3x12 ea", "3x10 ea", "3x10 ea"] },
+          { group: "C", name: "Standing Oblique DB Crunch", prescription: ["3x12 ea", "3x12 ea", "3x10 ea", "3x10 ea"], rest: "1:00" },
+          { group: "D", name: "DB Single Arm Shoulder Press", prescription: "3x10 ea" },
+          { group: "D", name: "Hanging Knee Tucks to Chest", prescription: "3x10" },
+          { group: "D", name: "Glute Hip Bridges (w/ 3 sec holds)", prescription: "3x10", rest: "0:30" },
+          { group: "E", name: "Sit-Ups", prescription: "20, 20, MAX" },
+          { group: "E", name: "Chin-Ups", prescription: "10, 10, MAX" },
+          { group: "E", name: "Dips", prescription: "10, 10, MAX", rest: "0:30" },
+          { group: "F", name: "Foam Rolling & Stretching", prescription: "10:00" },
+        ],
+      },
+      {
+        label: "Day 3",
+        title: "Work Capacity Circuit",
+        kind: "ladder",
+        note: "Rowing / Burpee Ladder. No rest between steps. Row the distance, then complete the burpees.",
+        ladder: [
+          ["100m / 1 burpee", "100m / 4 burpee", "500m / 5 burpee", "1000m / 10 burpee"],
+          ["200m / 2 burpee", "200m / 4 burpee", "250m / 5 burpee", "900m / 9 burpee"],
+          ["300m / 3 burpee", "300m / 4 burpee", "500m / 5 burpee", "800m / 8 burpee"],
+          ["400m / 4 burpee", "400m / 4 burpee", "250m / 5 burpee", "700m / 7 burpee"],
+          ["500m / 5 burpee", "500m / 4 burpee", "500m / 5 burpee", "600m / 6 burpee"],
+          ["500m / 5 burpee", "500m / 4 burpee", "250m / 5 burpee", "500m / 5 burpee"],
+          ["400m / 4 burpee", "400m / 4 burpee", "500m / 5 burpee", "400m / 4 burpee"],
+          ["300m / 3 burpee", "300m / 4 burpee", "250m / 5 burpee", "300m / 3 burpee"],
+          ["200m / 2 burpee", "200m / 4 burpee", "500m / 5 burpee", "200m / 2 burpee"],
+          ["100m / 1 burpee", "100m / 4 burpee", "250m / 5 burpee", "100m / 1 burpee"],
+        ],
+      },
+    ],
+  },
+  {
+    title: "Weeks 5-8",
+    weeks: [5, 6, 7, 8],
+    weekLabels: ["W5", "W6", "W7", "W8"],
+    days: [
+      {
+        label: "Day 1",
+        kind: "table",
+        rows: [
+          { group: "B", name: "Back Squat", prescription: ["4x15", "4x12", "4x10", "4x8"] },
+          { group: "B", name: "Squat Jump (bodyweight)", prescription: "4x5", rest: "1:30" },
+          { group: "C", name: "Pull-Ups", prescription: "4x MAX" },
+          { group: "C", name: "DB Step-Ups", prescription: ["4x12 ea", "4x10 ea", "4x10 ea", "4x8 ea"], rest: "1:00" },
+          { group: "D", name: "Inverted Rows", prescription: ["10, 10, MAX", "12, 12, MAX", "12, 12, MAX", "15, 15, MAX"] },
+          { group: "D", name: "Lunges", prescription: "3x8 ea" },
+          { group: "D", name: "Push-Ups", prescription: "3x MAX", rest: "0:30" },
+          { group: "E", name: "DB Single Arm Bent-Over Row", prescription: "3x10 ea" },
+          { group: "E", name: "DB Shoulder Circuit", prescription: "3x10 ea" },
+          { group: "E", name: "Planks (Front, Left, Right)", prescription: ["0:30 ea", "0:40 ea", "0:50 ea", "1:00 ea"], rest: "0:30" },
+          { group: "F", name: "Foam Rolling & Stretching", prescription: "10:00" },
+        ],
+      },
+      {
+        label: "Day 2",
+        kind: "table",
+        rows: [
+          { group: "B", name: "Deadlift", prescription: ["4x15", "4x12", "4x10", "4x8"] },
+          { group: "B", name: "Medicine Ball Overhead Slam", prescription: ["4x8", "4x8", "4x10", "4x10"], rest: "1:30" },
+          { group: "C", name: "Barbell or Dumbbell Bench Press", prescription: ["4x12", "4x10", "4x10", "4x8"] },
+          { group: "C", name: "Plyometric Push-Up (clapping)", prescription: "4x5", rest: "1:00" },
+          { group: "D", name: "Dumbbell Incline Bench", prescription: ["3x10", "3x12", "3x12", "3x15"] },
+          { group: "D", name: "Glute-Ham Raises", prescription: ["3x10", "3x12", "3x12", "3x15"] },
+          { group: "D", name: "Sit-Ups", prescription: "3x MAX", rest: "0:30" },
+          { group: "E", name: "DB Shoulder Press", prescription: "3x10 ea" },
+          { group: "E", name: "DB Lateral Lunges", prescription: "3x8 ea" },
+          { group: "E", name: "Hanging Leg Lowers", prescription: "3x10" },
+          { group: "E", name: "Dips", prescription: "3x MAX", rest: "0:30" },
+          { group: "F", name: "Foam Rolling & Stretching", prescription: "10:00" },
+        ],
+      },
+    ],
+  },
+  {
+    title: "Weeks 9-10",
+    weeks: [9, 10],
+    weekLabels: ["W9", "W10"],
+    days: [
+      {
+        label: "Day 1",
+        title: "Dumbbell Circuit Day",
+        kind: "circuit",
+        rounds: "W9: 3 Rounds  ·  W10: 2 Rounds",
+        note: "Use dumbbells that are 10% of your bodyweight in each hand. Rest 2-3 min between rounds.",
+        rows: [
+          { name: "DB Upright Row", prescription: "10" },
+          { name: "DB Step-Ups", prescription: "10 ea" },
+          { name: "DB Lateral Shoulder Raise", prescription: "10" },
+          { name: "DB Alternate Push-Up / Row", prescription: "10" },
+          { name: "DB Alternate Lunges", prescription: "10 ea" },
+          { name: "DB Squats", prescription: "10" },
+          { name: "DB Bent-Over Rows", prescription: "10" },
+          { name: "DB Single Leg RDLs", prescription: "10 ea" },
+          { name: "DB Lateral Step-Ups", prescription: "10 ea" },
+          { name: "DB Alt. Curl to Press", prescription: "10 ea" },
+          { name: "DB X-Over Step-Ups", prescription: "10 ea" },
+          { name: "DB Overhead Tricep Extension", prescription: "10" },
+          { name: "DB Lateral Lunges", prescription: "10 ea" },
+          { group: "C", name: "Planks (Front, Left, Right)", prescription: "4 x 0:45 ea" },
+          { group: "D", name: "Foam Rolling & Stretching", prescription: "10:00" },
+        ],
+      },
+      {
+        label: "Day 2",
+        title: "Pull / Push / Sit Circuit",
+        kind: "circuit",
+        rounds: "10 Rounds",
+        note: "No rest between exercises or rounds.",
+        rows: [
+          { name: "Pull-Ups", prescription: "3" },
+          { name: "Push-Ups", prescription: "10" },
+          { name: "Sit-Ups", prescription: "10" },
+          { group: "C", name: "Foam Rolling & Stretching", prescription: "10:00" },
+        ],
+      },
+    ],
+  },
+];
+
+// Which strength block covers a given program week.
+export function getStrengthBlockForWeek(week: number): StrengthBlock | undefined {
+  return strengthBlocks.find((b) => b.weeks.includes(week));
+}
