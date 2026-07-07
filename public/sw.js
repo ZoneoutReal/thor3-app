@@ -1,5 +1,10 @@
-const CACHE_NAME = "thor3-v1";
-const OFFLINE_URLS = ["/", "/icon-192.png", "/icon-512.png"];
+const CACHE_NAME = "thor3-v2";
+
+// Self-locate: the SW is served at <base>/sw.js, so strip the filename to get
+// the base path. Works at root ("") and under a GitHub Pages subpath ("/thor3-app").
+const BASE = self.location.pathname.replace(/\/sw\.js$/, "");
+const OFFLINE_URLS = [`${BASE}/`, `${BASE}/icon-192.png`, `${BASE}/icon-512.png`];
+const ICON = `${BASE}/icon-192.png`;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -39,16 +44,16 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(data.title, {
       body: data.body,
-      icon: "/icon-192.png",
-      badge: "/icon-192.png",
+      icon: ICON,
+      badge: ICON,
       vibrate: [200, 100, 200],
       tag: data.tag || "thor3",
-      data: { url: "/" },
+      data: { url: `${BASE}/` },
     })
   );
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  event.waitUntil(clients.openWindow(event.notification.data?.url || "/"));
+  event.waitUntil(clients.openWindow(event.notification.data?.url || `${BASE}/`));
 });

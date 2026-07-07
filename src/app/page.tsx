@@ -8,8 +8,10 @@ import {
   type DayWorkout,
   type WorkoutType,
 } from "@/lib/program-data";
-import { subscribeUser, unsubscribeUser, sendNotification } from "./actions";
+import { subscribeUser, unsubscribeUser, sendTestNotification } from "@/lib/push";
 import { StrengthSheet } from "./StrengthSheet";
+
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -28,7 +30,7 @@ function useServiceWorker() {
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker
-        .register("/sw.js", { scope: "/", updateViaCache: "none" })
+        .register(`${BASE_PATH}/sw.js`, { scope: `${BASE_PATH}/`, updateViaCache: "none" })
         .catch(() => {});
     }
   }, []);
@@ -156,7 +158,7 @@ function useNotifications() {
         ),
       });
       setSubscription(sub);
-      await subscribeUser(JSON.parse(JSON.stringify(sub)));
+      await subscribeUser(sub.toJSON());
     } finally {
       setLoading(false);
     }
@@ -165,9 +167,10 @@ function useNotifications() {
   const unsubscribe = useCallback(async () => {
     setLoading(true);
     try {
+      const endpoint = subscription?.endpoint;
       await subscription?.unsubscribe();
       setSubscription(null);
-      await unsubscribeUser();
+      await unsubscribeUser(endpoint);
     } finally {
       setLoading(false);
     }
@@ -175,7 +178,7 @@ function useNotifications() {
 
   const testNotification = useCallback(async () => {
     if (!subscription) return;
-    await sendNotification("Test notification — THOR3 is wired up.");
+    await sendTestNotification(subscription.endpoint);
   }, [subscription]);
 
   return { permission, subscription, loading, subscribe, unsubscribe, testNotification };

@@ -12,6 +12,8 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
+
 export const metadata: Metadata = {
   title: "THOR3 Trainer",
   description: "SFAS Conditioning Program Tracker",
@@ -41,7 +43,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <link rel="apple-touch-icon" href={`${BASE_PATH}/apple-touch-icon.png`} />
       </head>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
