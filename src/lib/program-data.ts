@@ -483,20 +483,30 @@ export interface StrengthBlock {
 }
 
 // Performed over 10-15 yards before every strength day.
-export const DYNAMIC_WARMUP: string[] = [
-  "Walking Lunge w/ Twist",
-  "Walking Lunge w/ Overhead Reach",
-  "Lateral Lunge",
-  "Walking Lunge > Elbow to Instep > Twisting Overhead Reach",
-  "Knee Pull to Chest",
-  "Heel Pull to Butt",
-  "Leg Cradle",
-  "Frankensteins",
-  "Lateral Shuffle",
-  "Carioca",
-  "High Knee Run",
-  "Power Skipping",
-  "T, Y, W & L's x 10 each",
+export interface WarmupMove {
+  name: string;
+  // Optional form cue shown as sub-text under the movement name.
+  note?: string;
+}
+
+export const DYNAMIC_WARMUP: WarmupMove[] = [
+  { name: "Walking Lunge w/ Twist" },
+  { name: "Walking Lunge w/ Overhead Reach" },
+  { name: "Lateral Lunge" },
+  { name: "Walking Lunge > Elbow to Instep > Twisting Overhead Reach" },
+  { name: "Knee Pull to Chest" },
+  { name: "Heel Pull to Butt" },
+  { name: "Leg Cradle" },
+  { name: "Frankensteins" },
+  { name: "Lateral Shuffle" },
+  { name: "Carioca" },
+  { name: "High Knee Run" },
+  { name: "Power Skipping" },
+  {
+    name: "T, Y, W & L's x10 each",
+    note:
+      "Shoulder raises done face-down on a bench or bent at the hips, light or no weight. Your arms trace each letter to work the mid-back and rotator cuff. T: arms straight out to the sides, thumbs up. Y: arms overhead in a Y at about 45 degrees, thumbs up. W: elbows bent, pull the arms down and back and squeeze the shoulder blades. L: upper arms pinned to your sides, elbows at 90 degrees, rotate the forearms up and out.",
+  },
 ];
 
 export const strengthBlocks: StrengthBlock[] = [

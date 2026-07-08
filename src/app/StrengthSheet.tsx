@@ -258,9 +258,19 @@ function WarmUp() {
           <p className="mb-2 text-xs text-[var(--muted)]">Perform each movement over 10-15 yards.</p>
           <ul className="grid gap-x-4 gap-y-1 text-sm text-[var(--foreground)] sm:grid-cols-2">
             {DYNAMIC_WARMUP.map((m) => (
-              <li key={m} className="flex items-start gap-2">
+              <li
+                key={m.name}
+                className={`flex items-start gap-2${m.note ? " sm:col-span-2" : ""}`}
+              >
                 <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[var(--accent)]" />
-                <span>{m}</span>
+                <span>
+                  {m.name}
+                  {m.note && (
+                    <span className="mt-0.5 block text-xs leading-relaxed text-[var(--muted)]">
+                      {m.note}
+                    </span>
+                  )}
+                </span>
               </li>
             ))}
           </ul>
@@ -294,7 +304,7 @@ export function StrengthSheet({
         <div className="mx-auto flex max-w-lg items-center justify-between px-4 py-4">
           <div>
             <h2 className="text-lg font-bold tracking-tight">Strength Sheet</h2>
-            <p className="text-xs text-[var(--muted)]">SFAS 10 Week Program</p>
+            <p className="text-xs text-[var(--muted)]">SFAS Strength</p>
           </div>
           <button
             onClick={onClose}

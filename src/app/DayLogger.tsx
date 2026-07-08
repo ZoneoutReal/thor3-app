@@ -263,6 +263,7 @@ function StepRow({
 export function DayLogger({
   day,
   week,
+  programId,
   typeLabel,
   dayComplete,
   serverLogs,
@@ -273,6 +274,7 @@ export function DayLogger({
 }: {
   day: DayWorkout;
   week: number;
+  programId: string;
   typeLabel: string;
   dayComplete: boolean;
   serverLogs: Record<string, LoggedValue>;
@@ -282,8 +284,13 @@ export function DayLogger({
   onClose: () => void;
 }) {
   const profileId = getProfileId();
-  const { logs, done, setLog, toggleDone, lastValue } = useWorkoutLog("10week", profileId, serverLogs, serverSets);
+  const { logs, done, setLog, toggleDone, lastValue } = useWorkoutLog(programId, profileId, serverLogs, serverSets);
   const sessions = parseDay(day);
+
+  // Per-day subjective log, stored alongside step values in the same synced map.
+  const noteKey = `note-${week}-${day.day}`;
+  const rpeKey = `rpe-${week}-${day.day}`;
+  const rpe = logs[rpeKey]?.v ?? "";
 
   const loggable = sessions.flatMap((s) => s.steps).filter((s) => s.kind === "log");
   const completed = loggable.filter((s) => done.has(`${week}-${day.day}-${s.id}`)).length;
@@ -342,6 +349,40 @@ export function DayLogger({
               })}
             </div>
           ))}
+
+          {/* Subjective log: effort + free-text notes, synced with the rest. */}
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-3">
+            <p className="text-sm font-semibold text-[var(--foreground)]">How it went</p>
+            <p className="mt-0.5 text-xs text-[var(--muted)]">Effort (RPE 1&ndash;10)</p>
+            <div className="mt-2 grid grid-cols-10 gap-1">
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
+                const on = rpe === String(n);
+                return (
+                  <button
+                    key={n}
+                    onClick={() => setLog(rpeKey, on ? "" : String(n), "rpe", week)}
+                    className="rounded-md py-1.5 text-xs font-semibold transition-colors"
+                    style={{
+                      backgroundColor: on ? "var(--accent)" : "var(--background)",
+                      color: on ? "#000" : "var(--muted)",
+                      borderWidth: 1,
+                      borderColor: on ? "var(--accent)" : "var(--border)",
+                    }}
+                    aria-label={`Effort ${n} of 10`}
+                  >
+                    {n}
+                  </button>
+                );
+              })}
+            </div>
+            <textarea
+              value={logs[noteKey]?.v ?? ""}
+              onChange={(e) => setLog(noteKey, e.target.value, "note", week)}
+              placeholder="Notes: how you felt, injuries, weather, anything to remember."
+              rows={2}
+              className="mt-3 w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] outline-none focus:border-[var(--accent)]"
+            />
+          </div>
 
           <p className="pt-2 text-center text-[11px] text-[var(--muted)]">
             Your reps and times are saved and synced. {typeLabel === "APFT" ? "Track your scores week to week." : "Tap a step or let a timer check it off."}

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   getProgram,
+  programs,
   DAY_LABELS,
   TYPE_META,
   type DayWorkout,
@@ -13,8 +14,9 @@ import { StrengthSheet } from "./StrengthSheet";
 import { DayLogger } from "./DayLogger";
 import { Gate } from "./Gate";
 import { Together } from "./Together";
-import { pullAll, queuePush, setReminder, type Snapshot } from "@/lib/sync";
+import { pullAll, queuePush, setReminder, setActiveProgram, onSyncStatus, type Snapshot, type SyncStatus } from "@/lib/sync";
 import { getPasscode, getProfileId, type Profile } from "@/lib/profiles";
+import { getProgramPref, setProgramPref, getStartDate, setStartDate, currentPosition } from "@/lib/program-prefs";
 
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
@@ -298,10 +300,18 @@ function ReminderTime({
 
 function NotificationSettings({
   myProfile,
+  programId,
+  startDate,
+  onProgramChange,
+  onStartDateChange,
   onReminderSaved,
   onClose,
 }: {
   myProfile?: Profile;
+  programId: string;
+  startDate: string | null;
+  onProgramChange: (id: string) => void;
+  onStartDateChange: (iso: string) => void;
   onReminderSaved: () => void;
   onClose: () => void;
 }) {
@@ -312,14 +322,53 @@ function NotificationSettings({
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={onClose}>
       <div
-        className="w-full max-w-lg rounded-t-2xl border border-[var(--border)] bg-[var(--background)] px-5 pb-8 pt-4"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-[var(--border)] bg-[var(--background)] px-5 pb-8 pt-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[var(--border)]" />
-        <h3 className="text-base font-bold">Notifications</h3>
+        <h3 className="text-base font-bold">Settings</h3>
         {myProfile && (
           <p className="mt-0.5 text-xs text-[var(--muted)]">Signed in as {myProfile.display_name}</p>
         )}
+
+        {/* Program + start-date anchor */}
+        <div className="mt-4 space-y-4 border-b border-[var(--border)] pb-4">
+          <div>
+            <p className="text-sm font-semibold">Program</p>
+            <div className="mt-2 flex gap-1.5">
+              {programs.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => onProgramChange(p.id)}
+                  className="flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors"
+                  style={{
+                    backgroundColor: programId === p.id ? "var(--accent)" : "var(--card)",
+                    color: programId === p.id ? "#000" : "var(--muted)",
+                  }}
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label htmlFor="thor3-start" className="text-sm font-semibold">
+              Start date
+            </label>
+            <p className="mt-0.5 text-xs text-[var(--muted)]">
+              The Monday of Week 1. Anchors &ldquo;Today&rdquo; to the right week and day.
+            </p>
+            <input
+              id="thor3-start"
+              type="date"
+              value={startDate ?? ""}
+              onChange={(e) => onStartDateChange(e.target.value)}
+              className="mt-2 w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)] outline-none focus:border-[var(--accent)]"
+            />
+          </div>
+        </div>
+
+        <h4 className="mt-4 text-sm font-bold">Notifications</h4>
 
         {!supported ? (
           <p className="mt-3 text-sm text-[var(--muted)]">
@@ -472,6 +521,7 @@ function DayCard({
   workout,
   weekNum,
   isDone,
+  isToday = false,
   onToggle,
   onOpenStrength,
   onOpenLogger,
@@ -479,6 +529,7 @@ function DayCard({
   workout: DayWorkout;
   weekNum: number;
   isDone: boolean;
+  isToday?: boolean;
   onToggle: () => void;
   onOpenStrength: (week: number) => void;
   onOpenLogger: (week: number, day: number) => void;
@@ -493,9 +544,12 @@ function DayCard({
       style={{
         borderColor: isDone
           ? "#22c55e44"
+          : isToday
+          ? "var(--accent)"
           : expanded
           ? meta.color + "44"
           : "var(--border)",
+        borderWidth: isToday ? 2 : 1,
         backgroundColor: isDone
           ? "#22c55e08"
           : expanded
@@ -523,6 +577,14 @@ function DayCard({
               {DAY_LABELS[workout.day - 1]}
             </span>
             <TypeBadge type={workout.type} />
+            {isToday && (
+              <span
+                className="rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                style={{ backgroundColor: "var(--accent)", color: "#000" }}
+              >
+                Today
+              </span>
+            )}
           </div>
           {!isRest && (
             <p className="mt-0.5 truncate text-sm text-[var(--foreground)]">
@@ -701,11 +763,18 @@ export default function Home() {
   const [showGate, setShowGate] = useState(false);
   const [activeTab, setActiveTab] = useState<"workout" | "together">("workout");
 
+  // Program selection + start-date anchor (per profile, stored locally).
+  const [selectedProgram, setSelectedProgram] = useState<string>("10week");
+  const [startDate, setStartDateState] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+
+  const program = getProgram(selectedProgram) ?? getProgram("10week")!;
+
   const [weekIdx, setWeekIdx] = useState(0);
-  const program = getProgram("10week")!;
-  const week = program.data[weekIdx];
+  const week = program.data[Math.min(weekIdx, program.data.length - 1)];
+  const position = currentPosition(program, startDate);
   const { isDone, toggle, count, done, snapshot, refresh, refreshing } = useSyncedProgress(
-    "10week",
+    selectedProgram,
     myProfileId,
     unlocked === true
   );
@@ -717,16 +786,34 @@ export default function Home() {
   const firstName = myProfile?.display_name.split(" ")[0] ?? "";
 
   // Current profile's server-side recorded values + set completion, for the logger.
-  const myRow = snapshot?.progress.find((p) => p.profile === myProfileId && p.program === "10week");
+  const myRow = snapshot?.progress.find((p) => p.profile === myProfileId && p.program === selectedProgram);
   const serverLogs = myRow?.logs ?? {};
   const serverSets = myRow?.sets ?? [];
 
-  // Resolve identity on the client (localStorage is only available here).
+  // Resolve identity + per-profile prefs on the client (localStorage only here).
   useEffect(() => {
     const pid = getProfileId();
     setMyProfileId(pid);
     setUnlocked(!!(getPasscode() && pid));
+    setSelectedProgram(getProgramPref(pid));
+    setStartDateState(getStartDate(pid));
   }, []);
+
+  // Keep the background push queue routed to the program on screen.
+  useEffect(() => {
+    setActiveProgram(selectedProgram);
+  }, [selectedProgram]);
+
+  // Reflect background sync state in the header indicator.
+  useEffect(() => onSyncStatus(setSyncStatus), []);
+
+  // Jump the week selector to "today" whenever the anchor (program / profile /
+  // start date) changes. Manual week navigation afterward is preserved.
+  useEffect(() => {
+    const pos = currentPosition(program, startDate);
+    setWeekIdx(pos ? pos.weekIndex : 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProgram, myProfileId, startDate]);
 
   // Freshen the shared snapshot whenever the Together tab is opened.
   useEffect(() => {
@@ -734,9 +821,24 @@ export default function Home() {
   }, [activeTab, unlocked, refresh]);
 
   const handleUnlock = useCallback(() => {
-    setMyProfileId(getProfileId());
+    const pid = getProfileId();
+    setMyProfileId(pid);
+    setSelectedProgram(getProgramPref(pid));
+    setStartDateState(getStartDate(pid));
     setUnlocked(true);
     setShowGate(false);
+  }, []);
+
+  const changeProgram = useCallback((id: string) => {
+    const pid = getProfileId();
+    if (pid) setProgramPref(pid, id);
+    setSelectedProgram(id);
+  }, []);
+
+  const changeStartDate = useCallback((iso: string) => {
+    const pid = getProfileId();
+    if (pid) setStartDate(pid, iso);
+    setStartDateState(iso || null);
   }, []);
 
   // First run (or a wiped passcode): show the gate full-screen.
@@ -768,6 +870,14 @@ export default function Home() {
               </button>
             </div>
             <div className="flex items-center gap-3">
+              {syncStatus !== "idle" && (
+                <span
+                  title={syncStatus === "error" ? "Sync failed, will retry" : "Syncing"}
+                  className={`h-2 w-2 rounded-full ${syncStatus === "syncing" ? "animate-pulse" : ""}`}
+                  style={{ backgroundColor: syncStatus === "error" ? "#ef4444" : "var(--accent)" }}
+                  aria-label={syncStatus === "error" ? "Sync failed" : "Syncing"}
+                />
+              )}
               <button
                 onClick={() => setStrengthWeek(week.week)}
                 className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--card)] text-[var(--muted)] transition-colors hover:bg-[var(--card-hover)] hover:text-[var(--foreground)]"
@@ -888,6 +998,7 @@ export default function Home() {
                     workout={day}
                     weekNum={week.week}
                     isDone={isDone(week.week, day.day)}
+                    isToday={position?.todayId === `${week.week}-${day.day}`}
                     onToggle={() => toggle(week.week, day.day)}
                     onOpenStrength={setStrengthWeek}
                     onOpenLogger={(w, d) => setLoggerDay({ week: w, day: d })}
@@ -904,6 +1015,7 @@ export default function Home() {
               snapshot={snapshot}
               myProfileId={myProfileId}
               myDays={[...done]}
+              programId={selectedProgram}
               onRefresh={refresh}
               refreshing={refreshing}
             />
@@ -922,6 +1034,10 @@ export default function Home() {
       {showSettings && (
         <NotificationSettings
           myProfile={myProfile}
+          programId={selectedProgram}
+          startDate={startDate}
+          onProgramChange={changeProgram}
+          onStartDateChange={changeStartDate}
           onReminderSaved={refresh}
           onClose={() => setShowSettings(false)}
         />
@@ -947,6 +1063,7 @@ export default function Home() {
             <DayLogger
               day={d}
               week={loggerDay.week}
+              programId={selectedProgram}
               typeLabel={TYPE_META[d.type].label}
               dayComplete={isDone(loggerDay.week, loggerDay.day)}
               serverLogs={serverLogs}
@@ -966,7 +1083,11 @@ export default function Home() {
 
       {/* Strength Sheet */}
       {strengthWeek !== null && (
-        <StrengthSheet initialWeek={strengthWeek} onClose={() => setStrengthWeek(null)} />
+        <StrengthSheet
+          initialWeek={strengthWeek}
+          programId={selectedProgram}
+          onClose={() => setStrengthWeek(null)}
+        />
       )}
     </div>
   );

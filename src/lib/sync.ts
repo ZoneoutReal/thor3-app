@@ -3,6 +3,7 @@
 // authenticated with the family passcode the user entered at the gate.
 
 import { getPasscode, getProfileId, type Profile } from "./profiles";
+import { DEFAULT_PROGRAM } from "./program-prefs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -55,21 +56,135 @@ export async function setReminder(profile: string, r: { hour?: number; min?: num
   return call({ action: "set-reminder", passcode, profile, ...r });
 }
 
-// Debounced, patch-merging pusher. Day toggles and set toggles can both call
-// this from anywhere; only the fields provided are written server-side.
-let pending: { days?: string[]; sets?: string[]; logs?: Record<string, LoggedValue> } = {};
-let timer: ReturnType<typeof setTimeout> | null = null;
+// --- Durable, program-aware push queue --------------------------------------
+//
+// Progress rows are keyed by (profile, program), so every push must carry the
+// program the app is currently showing. The active program is set by the app
+// whenever the selected program changes.
 
-export function queuePush(patch: { days?: string[]; sets?: string[]; logs?: Record<string, LoggedValue> }) {
+let activeProgram = DEFAULT_PROGRAM;
+export function setActiveProgram(id: string) {
+  activeProgram = id || DEFAULT_PROGRAM;
+}
+
+export type Patch = { days?: string[]; sets?: string[]; logs?: Record<string, LoggedValue> };
+type Outbox = { profile: string; program: string; patch: Patch };
+
+const OUTBOX_KEY = "thor3-outbox";
+const DEBOUNCE_MS = 700;
+const RETRY_MS = 5000;
+
+let timer: ReturnType<typeof setTimeout> | null = null;
+let inFlight = false;
+
+export type SyncStatus = "idle" | "syncing" | "error";
+let status: SyncStatus = "idle";
+const listeners = new Set<(s: SyncStatus) => void>();
+function setStatus(s: SyncStatus) {
+  if (s === status) return;
+  status = s;
+  listeners.forEach((fn) => fn(s));
+}
+export function getSyncStatus(): SyncStatus {
+  return status;
+}
+export function onSyncStatus(fn: (s: SyncStatus) => void): () => void {
+  listeners.add(fn);
+  fn(status);
+  return () => {
+    listeners.delete(fn);
+  };
+}
+
+function readOutbox(): Outbox | null {
+  try {
+    const raw = localStorage.getItem(OUTBOX_KEY);
+    return raw ? (JSON.parse(raw) as Outbox) : null;
+  } catch {
+    return null;
+  }
+}
+function writeOutbox(o: Outbox | null) {
+  try {
+    if (o) localStorage.setItem(OUTBOX_KEY, JSON.stringify(o));
+    else localStorage.removeItem(OUTBOX_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function scheduleFlush(ms = DEBOUNCE_MS) {
+  if (timer) clearTimeout(timer);
+  timer = setTimeout(() => {
+    timer = null;
+    void flush();
+  }, ms);
+}
+
+// Push the outbox to the server. On failure the patch stays queued (in
+// localStorage, so it survives a reload/close) and a retry is scheduled. On the
+// browser coming back online we flush immediately.
+export async function flush(): Promise<void> {
+  if (inFlight) return;
+  const out = readOutbox();
+  if (!out) {
+    setStatus("idle");
+    return;
+  }
+  const passcode = getPasscode();
+  if (!passcode) return; // locked — keep the outbox for after unlock
+
+  inFlight = true;
+  setStatus("syncing");
+  const r = await call({ action: "push-progress", passcode, profile: out.profile, program: out.program, ...out.patch });
+  inFlight = false;
+
+  if (r.error) {
+    setStatus("error");
+    scheduleFlush(RETRY_MS);
+    return;
+  }
+
+  // Success. If more writes landed while we were in flight, flush again;
+  // otherwise the queue is empty. (push-progress upserts full arrays, so a
+  // redundant resend is harmless.)
+  const after = readOutbox();
+  const unchanged =
+    after && after.profile === out.profile && after.program === out.program && JSON.stringify(after.patch) === JSON.stringify(out.patch);
+  if (unchanged) {
+    writeOutbox(null);
+    setStatus("idle");
+  } else {
+    scheduleFlush();
+  }
+}
+
+// Debounced, patch-merging pusher. Day toggles, set toggles, and value logs all
+// call this; only the fields provided are written server-side.
+export function queuePush(patch: Patch) {
   const passcode = getPasscode();
   const profile = getProfileId();
   if (!passcode || !profile) return;
-  pending = { ...pending, ...patch };
-  if (timer) clearTimeout(timer);
-  timer = setTimeout(() => {
-    const p = pending;
-    pending = {};
-    timer = null;
-    call({ action: "push-progress", passcode, profile, ...p });
-  }, 700);
+
+  const prev = readOutbox();
+  if (prev && (prev.profile !== profile || prev.program !== activeProgram)) {
+    // Context switched (profile or program). Flush the old queue before we
+    // start merging into a different row, so nothing is misattributed.
+    void flush();
+  }
+  const base: Outbox =
+    prev && prev.profile === profile && prev.program === activeProgram
+      ? prev
+      : { profile, program: activeProgram, patch: {} };
+  base.patch = { ...base.patch, ...patch };
+  writeOutbox(base);
+  scheduleFlush();
+}
+
+// Wire up background flushing once, on the client.
+if (typeof window !== "undefined") {
+  window.addEventListener("online", () => void flush());
+  // Drain anything left over from a previous session (fires after unlock, since
+  // flush() no-ops while locked).
+  scheduleFlush(1500);
 }

@@ -49,6 +49,21 @@ function localHM(tz: string): { hour: number; bucket: number } {
   return { hour, bucket: Math.floor(minute / 15) * 15 };
 }
 
+// The calendar day (YYYY-MM-DD) a moment falls on, in a given IANA timezone.
+function localDayKey(d: Date, tz: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+function isToday(iso: string, tz: string): boolean {
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return false;
+  return localDayKey(then, tz) === localDayKey(new Date(), tz);
+}
+
 Deno.serve(async (req) => {
   const { data: cfgRows } = await admin.from("app_config").select("key, value");
   const cfg = Object.fromEntries(
@@ -83,7 +98,25 @@ Deno.serve(async (req) => {
 
   let sent = 0;
   let removed = 0;
+  let skipped = 0;
   for (const p of due as Profile[]) {
+    // Don't nag someone who's already logged activity today. progress.updated_at
+    // bumps on any log (day/set/value/note), so a same-day timestamp means they
+    // engaged with training today. A forced/manual send bypasses this.
+    if (!forced) {
+      const { data: prog } = await admin
+        .from("progress")
+        .select("updated_at")
+        .eq("profile", p.id)
+        .order("updated_at", { ascending: false })
+        .limit(1);
+      const last = prog?.[0]?.updated_at as string | undefined;
+      if (last && isToday(last, p.tz || "America/Chicago")) {
+        skipped++;
+        continue;
+      }
+    }
+
     const { data: subs } = await admin
       .from("push_subscriptions")
       .select("endpoint, subscription")
@@ -96,7 +129,7 @@ Deno.serve(async (req) => {
           row.subscription,
           JSON.stringify({
             title: "THOR3 Trainer",
-            body: first ? `${first} — ${msg}` : msg,
+            body: first ? `${first}: ${msg}` : msg,
             tag: `thor3-reminder-${p.id}`,
           })
         );
@@ -111,5 +144,5 @@ Deno.serve(async (req) => {
     }
   }
 
-  return json({ success: true, due: (due as Profile[]).map((p) => p.id), sent, removed });
+  return json({ success: true, due: (due as Profile[]).map((p) => p.id), sent, removed, skipped });
 });

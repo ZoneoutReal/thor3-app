@@ -20,21 +20,23 @@ export function Together({
   snapshot,
   myProfileId,
   myDays,
+  programId,
   onRefresh,
   refreshing,
 }: {
   snapshot: Snapshot;
   myProfileId: string | null;
   myDays: string[];
+  programId: string;
   onRefresh: () => void;
   refreshing: boolean;
 }) {
-  const program = getProgram("10week")!;
+  const program = getProgram(programId) ?? getProgram("10week")!;
   const weeks = program.data;
   const total = weeks.reduce((s, w) => s + w.days.length, 0);
 
   const progById = Object.fromEntries(
-    snapshot.progress.filter((p) => p.program === "10week").map((p) => [p.profile, p])
+    snapshot.progress.filter((p) => p.program === programId).map((p) => [p.profile, p])
   );
 
   const cards = snapshot.profiles.map((pr) => {
@@ -47,7 +49,8 @@ export function Together({
       done: w.days.filter((d) => days.has(`${w.week}-${d.day}`)).length,
     }));
     const doneCount = perWeek.reduce((s, w) => s + w.done, 0);
-    return { pr, doneCount, perWeek, updated: row?.updated_at };
+    const weeksComplete = perWeek.filter((w) => w.total > 0 && w.done === w.total).length;
+    return { pr, doneCount, perWeek, weeksComplete, updated: row?.updated_at };
   });
 
   return (
@@ -78,7 +81,7 @@ export function Together({
       </div>
 
       <div className="flex flex-col gap-3">
-        {cards.map(({ pr, doneCount, perWeek, updated }) => {
+        {cards.map(({ pr, doneCount, perWeek, weeksComplete, updated }) => {
           const pct = total > 0 ? (doneCount / total) * 100 : 0;
           const isMe = pr.id === myProfileId;
           return (
@@ -129,6 +132,13 @@ export function Together({
                 />
               </div>
 
+              <div className="mt-2 flex items-center justify-between text-[11px] text-[var(--muted)]">
+                <span>{Math.round(pct)}% complete</span>
+                <span>
+                  {weeksComplete}/{weeks.length} weeks done
+                </span>
+              </div>
+
               <div className="mt-3 flex gap-1">
                 {perWeek.map((w) => {
                   const r = w.total > 0 ? w.done / w.total : 0;
@@ -157,7 +167,7 @@ export function Together({
       </div>
 
       <p className="mt-4 text-center text-[11px] text-[var(--muted)]">
-        Week grid, left to right = weeks 1&ndash;10. Green means done.
+        Week grid, left to right = weeks 1&ndash;{weeks.length}. Green means done.
       </p>
     </div>
   );
