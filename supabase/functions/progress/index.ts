@@ -56,7 +56,10 @@ Deno.serve(async (req) => {
       const { data: progress } = await admin
         .from("progress")
         .select("profile, program, days, sets, updated_at");
-      return json({ success: true, profiles: profiles ?? [], progress: progress ?? [] });
+      // Hide throwaway dev profiles (id starts with "_") from the app.
+      const real = (profiles ?? []).filter((p) => !String(p.id).startsWith("_"));
+      const realProgress = (progress ?? []).filter((p) => !String(p.profile).startsWith("_"));
+      return json({ success: true, profiles: real, progress: realProgress });
     }
 
     if (action === "push-progress") {
