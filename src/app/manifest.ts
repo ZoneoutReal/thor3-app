@@ -22,14 +22,18 @@ export default function manifest(): MetadataRoute.Manifest {
         src: `${BASE_PATH}/icon-192.png`,
         sizes: "192x192",
         type: "image/png",
+        purpose: "any",
       },
       {
         src: `${BASE_PATH}/icon-512.png`,
         sizes: "512x512",
         type: "image/png",
+        purpose: "any",
       },
       {
-        src: `${BASE_PATH}/icon-512.png`,
+        // Dedicated maskable art: lockup sits inside the center 80% safe zone
+        // so Android's adaptive-icon mask never clips it.
+        src: `${BASE_PATH}/icon-512-maskable.png`,
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",
