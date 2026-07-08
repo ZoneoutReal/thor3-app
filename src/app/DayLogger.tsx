@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { parseDay, fmtClock, type DayStep } from "@/lib/day-steps";
+import { parseDay, fmtClock, fmtDuration, type DayStep } from "@/lib/day-steps";
 import { queuePush, type LoggedValue } from "@/lib/sync";
 import { getProfileId } from "@/lib/profiles";
 import type { DayWorkout } from "@/lib/program-data";
@@ -12,6 +12,23 @@ function vibrate(ms: number) {
   } catch {
     /* ignore */
   }
+}
+
+// Parse a duration the user typed on the finish screen. Accepts a bare number as
+// minutes ("45" -> 45:00), or a clock ("45:30", "1:02:05"). Returns seconds, or
+// null if it can't be read.
+function parseDurationInput(s: string): number | null {
+  const t = s.trim();
+  if (t === "") return null;
+  if (/^\d+$/.test(t)) return parseInt(t, 10) * 60;
+  const m = t.match(/^(?:(\d+):)?(\d{1,2}):(\d{1,2})$/);
+  if (!m) return null;
+  const h = m[1] ? parseInt(m[1], 10) : 0;
+  const min = parseInt(m[2], 10);
+  const sec = parseInt(m[3], 10);
+  if (sec >= 60) return null;
+  if (m[1] && min >= 60) return null;
+  return h * 3600 + min * 60 + sec;
 }
 
 // --- Synced log values + step completion for the current profile -------------
@@ -26,6 +43,12 @@ function useWorkoutLog(
   const setsKey = profileId ? `thor3-sets-${profileId}-${programId}` : `thor3-sets-${programId}`;
   const [logs, setLogs] = useState<Record<string, LoggedValue>>({});
   const [done, setDone] = useState<Set<string>>(new Set());
+  // Mirror state in refs so a write's durable side effects (localStorage +
+  // queuePush) run synchronously, not inside a setState updater. Finishing the
+  // workout unmounts this logger in the same React batch, which would discard a
+  // pending updater and lose the final duration.
+  const logsRef = useRef<Record<string, LoggedValue>>({});
+  const setsRef = useRef<Set<string>>(new Set());
 
   // Local-first load, then merge the server snapshot in (local wins on conflict).
   useEffect(() => {
@@ -43,6 +66,8 @@ function useWorkoutLog(
     }
     const mergedLogs = { ...serverLogs, ...localLogs };
     const mergedSets = new Set<string>([...serverSets, ...localSets]);
+    logsRef.current = mergedLogs;
+    setsRef.current = mergedSets;
     setLogs(mergedLogs);
     setDone(mergedSets);
     localStorage.setItem(logsKey, JSON.stringify(mergedLogs));
@@ -52,30 +77,29 @@ function useWorkoutLog(
 
   const setLog = useCallback(
     (key: string, value: string, metric?: string, week?: number) => {
-      setLogs((prev) => {
-        const next = { ...prev };
-        if (value.trim() === "") delete next[key];
-        else next[key] = { v: value.trim(), m: metric, w: week };
-        localStorage.setItem(logsKey, JSON.stringify(next));
-        queuePush({ logs: next });
-        return next;
-      });
+      const next = { ...logsRef.current };
+      if (value.trim() === "") delete next[key];
+      else next[key] = { v: value.trim(), m: metric, w: week };
+      logsRef.current = next;
+      localStorage.setItem(logsKey, JSON.stringify(next));
+      queuePush({ logs: next });
+      setLogs(next);
     },
     [logsKey]
   );
 
   const toggleDone = useCallback(
     (id: string, val?: boolean) => {
-      setDone((prev) => {
-        const want = val === undefined ? !prev.has(id) : val;
-        if (prev.has(id) === want) return prev;
-        const next = new Set(prev);
-        if (want) next.add(id);
-        else next.delete(id);
-        localStorage.setItem(setsKey, JSON.stringify([...next]));
-        queuePush({ sets: [...next] });
-        return next;
-      });
+      const prev = setsRef.current;
+      const want = val === undefined ? !prev.has(id) : val;
+      if (prev.has(id) === want) return;
+      const next = new Set(prev);
+      if (want) next.add(id);
+      else next.delete(id);
+      setsRef.current = next;
+      localStorage.setItem(setsKey, JSON.stringify([...next]));
+      queuePush({ sets: [...next] });
+      setDone(next);
     },
     [setsKey]
   );
@@ -292,6 +316,56 @@ export function DayLogger({
   const rpeKey = `rpe-${week}-${day.day}`;
   const rpe = logs[rpeKey]?.v ?? "";
 
+  // Whole-workout timer. We store the wall-clock START timestamp (synced to
+  // Supabase via the logs map), not a running counter, so elapsed = now - start
+  // stays correct through a phone lock, an app close, or a device switch. On
+  // finish we compute and store the final duration in seconds.
+  const startKey = `session-start-${week}-${day.day}`;
+  const durKey = `session-dur-${week}-${day.day}`;
+  const startedAt = logs[startKey]?.v ?? null;
+  const durationSec = logs[durKey]?.v ? parseInt(logs[durKey].v, 10) : null;
+  const running = !!startedAt && durationSec == null;
+
+  // Re-render once a second while running so the elapsed readout ticks up. The
+  // value itself is derived from the timestamp, so a suspended tab loses nothing.
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => forceTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [running]);
+
+  const elapsedSec = startedAt ? Math.max(0, Math.floor((Date.now() - Date.parse(startedAt)) / 1000)) : 0;
+
+  const startSession = () => setLog(startKey, new Date().toISOString(), "session-start", week);
+  const discardSession = () => setLog(startKey, "", "session-start", week); // "" clears the key
+  const restartSession = () => {
+    setLog(durKey, "", "session-duration", week);
+    setLog(startKey, new Date().toISOString(), "session-start", week);
+  };
+  // Finishing opens a confirm step: the counted time is pre-filled and editable,
+  // and can be typed by hand if the timer was never started.
+  const [confirming, setConfirming] = useState(false);
+  const [durInput, setDurInput] = useState("");
+  const parsedInput = parseDurationInput(durInput);
+  const openFinish = () => {
+    const seed = running ? fmtDuration(elapsedSec) : durationSec != null ? fmtDuration(durationSec) : "";
+    setDurInput(seed);
+    setConfirming(true);
+  };
+  const confirmFinish = () => {
+    const t = durInput.trim();
+    if (t === "") {
+      // No time entered: clear any running timer so it isn't left counting.
+      if (startedAt) setLog(startKey, "", "session-start", week);
+    } else {
+      if (parsedInput == null) return; // invalid entry: keep the dialog open
+      setLog(durKey, String(parsedInput), "session-duration", week);
+    }
+    setConfirming(false);
+    onFinish();
+  };
+
   const loggable = sessions.flatMap((s) => s.steps).filter((s) => s.kind === "log");
   const completed = loggable.filter((s) => done.has(`${week}-${day.day}-${s.id}`)).length;
 
@@ -311,6 +385,66 @@ export function DayLogger({
 
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-lg flex-col gap-4 px-4 py-4">
+          {/* Whole-workout timer (wall-clock; keeps counting while locked). */}
+          <div
+            className="rounded-xl border p-4"
+            style={{ borderColor: running ? "var(--accent)" : "var(--border)", borderWidth: running ? 2 : 1 }}
+          >
+            {durationSec != null ? (
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">Workout time</p>
+                  <p className="font-mono text-2xl font-bold tabular-nums" style={{ color: "var(--success)" }}>
+                    {fmtDuration(durationSec)}
+                  </p>
+                </div>
+                <button
+                  onClick={restartSession}
+                  className="rounded-lg bg-[var(--card)] px-3 py-2 text-xs font-semibold text-[var(--muted)] transition-colors hover:bg-[var(--card-hover)]"
+                >
+                  Restart
+                </button>
+              </div>
+            ) : running ? (
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--accent)" }}>
+                    In progress
+                  </p>
+                  <p className="font-mono text-3xl font-bold tabular-nums" style={{ color: "var(--accent)" }}>
+                    {fmtDuration(elapsedSec)}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-col items-stretch gap-1.5">
+                  <button
+                    onClick={openFinish}
+                    className="rounded-lg px-4 py-2 text-sm font-bold transition-colors"
+                    style={{ backgroundColor: "var(--accent)", color: "#000" }}
+                  >
+                    Finish workout
+                  </button>
+                  <button onClick={discardSession} className="rounded-lg py-1 text-xs font-semibold text-[var(--muted)]">
+                    Discard
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">Time this workout</p>
+                  <p className="mt-0.5 text-xs text-[var(--muted)]">Keeps counting while your phone is locked.</p>
+                </div>
+                <button
+                  onClick={startSession}
+                  className="shrink-0 rounded-lg px-6 py-2.5 text-sm font-bold transition-colors"
+                  style={{ backgroundColor: "var(--accent)", color: "#000" }}
+                >
+                  Start
+                </button>
+              </div>
+            )}
+          </div>
+
           {sessions.map((session, si) => (
             <div key={si} className="flex flex-col gap-2">
               {session.label && (
@@ -393,7 +527,7 @@ export function DayLogger({
       <footer className="sticky bottom-0 border-t border-[var(--border)] bg-[var(--background)]/95 px-4 py-3 backdrop-blur-sm" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
         <div className="mx-auto max-w-lg">
           <button
-            onClick={onFinish}
+            onClick={dayComplete ? onClose : openFinish}
             className="w-full rounded-lg py-3 text-sm font-bold transition-colors"
             style={{
               backgroundColor: dayComplete ? "#22c55e20" : "var(--accent)",
@@ -404,6 +538,64 @@ export function DayLogger({
           </button>
         </div>
       </footer>
+
+      {/* Finish confirmation: review/edit the counted time (or type it in). */}
+      {confirming && (
+        <div
+          className="absolute inset-0 z-10 flex items-end justify-center bg-black/60"
+          onClick={() => setConfirming(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-t-2xl border border-[var(--border)] bg-[var(--background)] px-5 pb-8 pt-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[var(--border)]" />
+            <h3 className="text-base font-bold">Finish workout</h3>
+            <p className="mt-0.5 text-xs text-[var(--muted)]">
+              {running ? "Confirm the time or edit it, then finish." : "Enter how long this workout took."}
+            </p>
+
+            <div className="mt-4">
+              <label htmlFor="thor3-dur" className="text-sm font-semibold">
+                Total time
+              </label>
+              <input
+                id="thor3-dur"
+                value={durInput}
+                onChange={(e) => setDurInput(e.target.value)}
+                placeholder="45  or  45:30"
+                autoFocus
+                className="mt-2 w-full rounded-lg border bg-[var(--card)] px-3 py-3 text-center font-mono text-2xl font-bold tabular-nums text-[var(--foreground)] outline-none"
+                style={{ borderColor: durInput.trim() && parsedInput == null ? "#ef4444" : "var(--border)" }}
+              />
+              <p className="mt-1.5 text-center text-xs text-[var(--muted)]">
+                {durInput.trim() === ""
+                  ? "Minutes (e.g. 45) or mm:ss. Leave blank to finish without a time."
+                  : parsedInput == null
+                  ? "Enter minutes (45) or a clock (45:30 or 1:02:05)."
+                  : `= ${fmtDuration(parsedInput)}${parsedInput >= 60 ? `  ·  ${Math.round(parsedInput / 60)} min` : ""}`}
+              </p>
+            </div>
+
+            <div className="mt-5 flex gap-2">
+              <button
+                onClick={() => setConfirming(false)}
+                className="rounded-lg bg-[var(--card)] px-4 py-3 text-sm font-semibold text-[var(--muted)] transition-colors hover:bg-[var(--card-hover)]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmFinish}
+                disabled={durInput.trim() !== "" && parsedInput == null}
+                className="flex-1 rounded-lg py-3 text-sm font-bold transition-colors disabled:opacity-40"
+                style={{ backgroundColor: "var(--accent)", color: "#000" }}
+              >
+                Confirm &amp; finish workout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

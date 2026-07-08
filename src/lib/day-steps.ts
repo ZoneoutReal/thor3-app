@@ -216,6 +216,17 @@ export function fmtClock(totalSec: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+// Like fmtClock but grows an hours field for long sessions: 90 -> "1:30",
+// 3725 -> "1:02:05". Used for the whole-workout timer.
+export function fmtDuration(totalSec: number): string {
+  const t = Math.max(0, Math.floor(totalSec));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const s = t % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 // Does this day have anything worth logging (i.e. not a pure rest day)?
 export function isLoggable(type: WorkoutType): boolean {
   return type !== "rest";

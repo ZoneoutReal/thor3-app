@@ -10,6 +10,7 @@ import {
   type WorkoutType,
 } from "@/lib/program-data";
 import { subscribeUser, unsubscribeUser, sendTestNotification } from "@/lib/push";
+import { fmtDuration } from "@/lib/day-steps";
 import { StrengthSheet } from "./StrengthSheet";
 import { DayLogger } from "./DayLogger";
 import { Gate } from "./Gate";
@@ -522,6 +523,7 @@ function DayCard({
   weekNum,
   isDone,
   isToday = false,
+  durationSec,
   onToggle,
   onOpenStrength,
   onOpenLogger,
@@ -530,6 +532,7 @@ function DayCard({
   weekNum: number;
   isDone: boolean;
   isToday?: boolean;
+  durationSec?: number;
   onToggle: () => void;
   onOpenStrength: (week: number) => void;
   onOpenLogger: (week: number, day: number) => void;
@@ -583,6 +586,11 @@ function DayCard({
                 style={{ backgroundColor: "var(--accent)", color: "#000" }}
               >
                 Today
+              </span>
+            )}
+            {durationSec != null && (
+              <span className="ml-auto shrink-0 font-mono text-[11px] font-semibold text-[var(--muted)]">
+                {fmtDuration(durationSec)}
               </span>
             )}
           </div>
@@ -992,18 +1000,22 @@ export default function Home() {
               <WeekProgress total={week.days.length} completed={weekCompleted} />
 
               <div className="mt-4 flex flex-col gap-2">
-                {week.days.map((day) => (
-                  <DayCard
-                    key={day.day}
-                    workout={day}
-                    weekNum={week.week}
-                    isDone={isDone(week.week, day.day)}
-                    isToday={position?.todayId === `${week.week}-${day.day}`}
-                    onToggle={() => toggle(week.week, day.day)}
-                    onOpenStrength={setStrengthWeek}
-                    onOpenLogger={(w, d) => setLoggerDay({ week: w, day: d })}
-                  />
-                ))}
+                {week.days.map((day) => {
+                  const durV = serverLogs[`session-dur-${week.week}-${day.day}`]?.v;
+                  return (
+                    <DayCard
+                      key={day.day}
+                      workout={day}
+                      weekNum={week.week}
+                      isDone={isDone(week.week, day.day)}
+                      isToday={position?.todayId === `${week.week}-${day.day}`}
+                      durationSec={durV ? parseInt(durV, 10) : undefined}
+                      onToggle={() => toggle(week.week, day.day)}
+                      onOpenStrength={setStrengthWeek}
+                      onOpenLogger={(w, d) => setLoggerDay({ week: w, day: d })}
+                    />
+                  );
+                })}
               </div>
             </div>
           </main>
