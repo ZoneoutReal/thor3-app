@@ -237,17 +237,25 @@ export function distanceMiles(text: string): number | null {
   return d.value / 1609.344; // meters
 }
 
-// A clock string ("19:07", "1:02:05") to seconds, or null if not a clock. A
-// bare number is rejected here (ambiguous minutes vs seconds) so pace only
-// shows when the user logged an actual time.
-function clockToSeconds(s: string): number | null {
-  const m = s.trim().match(/^(?:(\d+):)?(\d{1,2}):(\d{1,2})$/);
-  if (!m) return null;
-  const h = m[1] ? parseInt(m[1], 10) : 0;
-  const min = parseInt(m[2], 10);
-  const sec = parseInt(m[3], 10);
-  if (sec >= 60) return null;
-  return h * 3600 + min * 60 + sec;
+// A logged run time to seconds. Accepts a clock ("19:07", "1:02:05") and a
+// plain/decimal number, which is read as MINUTES ("18.25" -> 18¼ min = 1095s).
+// Nobody logs a multi-mile run in seconds, so a bare number on a distance set
+// is unambiguously minutes — this is what lets pace show for "18.25"-style
+// entries where the user typed a period instead of a colon. Returns null for
+// anything unparseable (empty, text) so pace simply doesn't render.
+export function timeToSeconds(s: string): number | null {
+  const t = s.trim();
+  if (t === "") return null;
+  const clock = t.match(/^(?:(\d+):)?(\d{1,2}):(\d{1,2})$/);
+  if (clock) {
+    const h = clock[1] ? parseInt(clock[1], 10) : 0;
+    const min = parseInt(clock[2], 10);
+    const sec = parseInt(clock[3], 10);
+    if (sec >= 60) return null;
+    return h * 3600 + min * 60 + sec;
+  }
+  if (/^\d+(?:\.\d+)?$/.test(t)) return Math.round(parseFloat(t) * 60); // minutes
+  return null;
 }
 
 // Pace per mile for a timed running set, e.g. "9:34 /mi". Null when the step
@@ -256,7 +264,7 @@ export function pacePerMile(step: DayStep, value: string): string | null {
   if (step.input !== "time") return null;
   const miles = distanceMiles(step.label) ?? distanceMiles(step.metric ?? "");
   if (!miles || miles <= 0) return null;
-  const secs = clockToSeconds(value);
+  const secs = timeToSeconds(value);
   if (secs == null || secs <= 0) return null;
   return `${fmtClock(Math.round(secs / miles))} /mi`;
 }

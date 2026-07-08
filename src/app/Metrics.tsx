@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { LoggedValue } from "@/lib/sync";
-import { fmtClock, fmtDuration } from "@/lib/day-steps";
+import { fmtClock, fmtDuration, timeToSeconds } from "@/lib/day-steps";
 
 // One data point in a metric's history: the week it was logged and the value.
 type Point = { week: number; n: number; raw: string };
@@ -54,7 +54,15 @@ function buildSeries(logs: Record<string, LoggedValue>): Series[] {
     if (!val || !val.m || typeof val.w !== "number") continue;
     if (HIDDEN.has(val.m)) continue;
     if (/-\d+$/.test(val.m)) continue; // per-interval sub-metrics are noisy; skip
-    const parsed = toNumber(val.v);
+    // A run-distance metric is always a time/pace series, even when the value
+    // was typed as a plain/decimal number (e.g. "18.25" minutes).
+    const isRun = metricMiles(val.m) != null;
+    const parsed = isRun
+      ? (() => {
+          const s = timeToSeconds(val.v);
+          return s == null ? null : { n: s, isTime: true };
+        })()
+      : toNumber(val.v);
     if (!parsed) continue;
     const g = byMetric.get(val.m) ?? { pts: [], isTime: parsed.isTime };
     g.pts.push({ week: val.w, n: parsed.n, raw: val.v.trim() });
