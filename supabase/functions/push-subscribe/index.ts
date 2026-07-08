@@ -89,8 +89,8 @@ Deno.serve(async (req) => {
       await webpush.sendNotification(
         data.subscription,
         JSON.stringify({
-          title: "THOR3 Trainer",
-          body: name ? `${name}, notifications are wired up.` : "Test notification — THOR3 is wired up.",
+          title: "Rukr",
+          body: name ? `${name}, notifications are wired up.` : "Test notification: Rukr is wired up.",
           tag: "thor3-reminder",
         })
       );

@@ -93,10 +93,10 @@ function InstallBanner({
         <div className="flex items-start gap-3 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-4 py-3">
           <span className="text-lg">&#x2193;</span>
           <div className="flex-1 text-sm">
-            <p className="font-semibold text-[var(--accent)]">Install THOR3</p>
+            <p className="font-semibold text-[var(--accent)]">Install Rukr</p>
             <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-[var(--muted)]">
               <li>Tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.</li>
-              <li>Open THOR3 from your home screen.</li>
+              <li>Open Rukr from your home screen.</li>
               <li>Enter the <strong>family code</strong> and tap <strong>your name</strong> to set your profile.</li>
               <li>Turn on reminders so you get your daily nudge.</li>
             </ol>
@@ -115,7 +115,7 @@ function InstallBanner({
         <div className="flex items-center gap-3 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-4 py-3">
           <span className="text-lg">&#x2193;</span>
           <div className="flex-1">
-            <p className="text-sm font-semibold text-[var(--accent)]">Install THOR3</p>
+            <p className="text-sm font-semibold text-[var(--accent)]">Install Rukr</p>
             <p className="mt-0.5 text-xs text-[var(--muted)]">Add to home screen for offline access</p>
           </div>
           <button
@@ -873,7 +873,7 @@ export default function Home() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-xl font-bold tracking-tight">
-                THOR<span style={{ color: "var(--accent)" }}>3</span>
+                Ruk<span style={{ color: "var(--accent)" }}>r</span>
               </h1>
               <button
                 onClick={() => snapshot && setShowGate(true)}
@@ -1087,11 +1087,19 @@ export default function Home() {
           const w = program.data.find((x) => x.week === loggerDay.week);
           const d = w?.days.find((x) => x.day === loggerDay.day);
           if (!d) return null;
+          // Map this weekday to a strength block day: the Nth strength session of
+          // the week (counting strength on plain + "mixed" days) -> block Day N.
+          const hasStrength = (dw: DayWorkout) =>
+            dw.sessions.some((s) =>
+              s.description.some((l) => /strength training/i.test(l) && /strength sheet/i.test(l))
+            );
+          const strengthDayIndex = w ? w.days.filter((x) => x.day < d.day && hasStrength(x)).length : 0;
           return (
             <DayLogger
               day={d}
               week={loggerDay.week}
               programId={selectedProgram}
+              strengthDayIndex={strengthDayIndex}
               typeLabel={TYPE_META[d.type].label}
               dayComplete={isDone(loggerDay.week, loggerDay.day)}
               serverLogs={serverLogs}

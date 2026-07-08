@@ -7,8 +7,8 @@ const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "THOR3 Trainer",
-    short_name: "THOR3",
+    name: "Rukr",
+    short_name: "Rukr",
     description: "SFAS Conditioning Program Tracker",
     id: `${BASE_PATH}/`,
     start_url: `${BASE_PATH}/`,

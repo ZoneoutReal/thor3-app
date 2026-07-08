@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { parseDay, fmtClock, fmtDuration, type DayStep } from "@/lib/day-steps";
 import { queuePush, type LoggedValue } from "@/lib/sync";
 import { getProfileId } from "@/lib/profiles";
-import type { DayWorkout } from "@/lib/program-data";
+import { getStrengthBlockForWeek, type DayWorkout } from "@/lib/program-data";
+import { WorkoutMode } from "./WorkoutMode";
 
 function vibrate(ms: number) {
   try {
@@ -307,6 +308,7 @@ export function DayLogger({
   day,
   week,
   programId,
+  strengthDayIndex = 0,
   typeLabel,
   dayComplete,
   serverLogs,
@@ -318,6 +320,7 @@ export function DayLogger({
   day: DayWorkout;
   week: number;
   programId: string;
+  strengthDayIndex?: number; // which strength block day this weekday maps to
   typeLabel: string;
   dayComplete: boolean;
   serverLogs: Record<string, LoggedValue>;
@@ -327,6 +330,7 @@ export function DayLogger({
   onClose: () => void;
 }) {
   const profileId = getProfileId();
+  const strengthBlock = getStrengthBlockForWeek(week);
   const { logs, done, setLog, toggleDone, lastValue } = useWorkoutLog(programId, profileId, serverLogs, serverSets);
   const sessions = parseDay(day);
 
@@ -495,6 +499,31 @@ export function DayLogger({
                   );
                 }
                 if (step.kind === "strength") {
+                  // Show this day's actual strength sets inline (loggable), with a
+                  // Day toggle in case the weekday->block-day guess is off. Falls
+                  // back to opening the full sheet if the block can't be resolved.
+                  if (strengthBlock && strengthBlock.days.length > 0) {
+                    return (
+                      <div key={step.id}>
+                        <div className="mb-2 flex items-center justify-between">
+                          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--accent)" }}>
+                            Strength training
+                          </p>
+                          <button onClick={onOpenStrength} className="text-xs font-semibold text-[var(--accent)]">
+                            Full sheet &#8594;
+                          </button>
+                        </div>
+                        <WorkoutMode
+                          block={strengthBlock}
+                          programId={programId}
+                          initialWeek={week}
+                          lockWeek={week}
+                          singleDayIndex={strengthDayIndex}
+                          embedded
+                        />
+                      </div>
+                    );
+                  }
                   return (
                     <button
                       key={step.id}

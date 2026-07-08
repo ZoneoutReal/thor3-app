@@ -15,12 +15,12 @@ const geistMono = Geist_Mono({
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 export const metadata: Metadata = {
-  title: "THOR3 Trainer",
+  title: "Rukr",
   description: "SFAS Conditioning Program Tracker",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "THOR3",
+    title: "Rukr",
   },
 };
 

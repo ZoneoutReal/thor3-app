@@ -355,24 +355,40 @@ export function WorkoutMode({
   block,
   programId,
   initialWeek,
+  lockWeek,
+  singleDayIndex,
+  embedded,
 }: {
   block: StrengthBlock;
   programId: string;
   initialWeek?: number;
+  lockWeek?: number; // force this logging week and hide the week picker
+  singleDayIndex?: number; // show only this day (with a compact Day toggle)
+  embedded?: boolean; // trim the standalone bottom padding when inlined
 }) {
-  const [targetWeek, setTargetWeek] = useState(
-    initialWeek != null && block.weeks.includes(initialWeek) ? initialWeek : block.weeks[0]
-  );
+  const wantWeek =
+    lockWeek != null && block.weeks.includes(lockWeek)
+      ? lockWeek
+      : initialWeek != null && block.weeks.includes(initialWeek)
+      ? initialWeek
+      : block.weeks[0];
+  const [targetWeek, setTargetWeek] = useState(wantWeek);
 
-  // Keep the target week valid when the block changes underneath us.
+  // Keep the target week valid (and pinned to lockWeek) when the block changes.
   useEffect(() => {
-    if (!block.weeks.includes(targetWeek)) {
-      setTargetWeek(
-        initialWeek != null && block.weeks.includes(initialWeek) ? initialWeek : block.weeks[0]
-      );
+    if (targetWeek !== wantWeek && (lockWeek != null || !block.weeks.includes(targetWeek))) {
+      setTargetWeek(wantWeek);
     }
-  }, [block, targetWeek, initialWeek]);
+  }, [block, targetWeek, wantWeek, lockWeek]);
 
+  const clampDay = (i: number) => Math.min(Math.max(0, i), block.days.length - 1);
+  const [selectedDay, setSelectedDay] = useState(singleDayIndex != null ? clampDay(singleDayIndex) : 0);
+  useEffect(() => {
+    if (singleDayIndex != null) setSelectedDay(clampDay(singleDayIndex));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [singleDayIndex, block.days.length]);
+
+  const daysToShow = singleDayIndex != null ? block.days.filter((_, i) => i === selectedDay) : block.days;
   const weekIndex = Math.max(0, block.weeks.indexOf(targetWeek));
   const { isDone, toggle, set: setSet } = useSetProgress(programId);
 
@@ -417,9 +433,9 @@ export function WorkoutMode({
   );
 
   return (
-    <div className="pb-24">
+    <div className={embedded ? "pb-4" : "pb-24"}>
       {/* Week picker for logging */}
-      {block.weeks.length > 1 && (
+      {block.weeks.length > 1 && lockWeek == null && (
         <div className="mb-4">
           <p className="mb-1.5 text-xs font-medium text-[var(--muted)]">Logging week</p>
           <div className="hide-scrollbar flex gap-1.5 overflow-x-auto">
@@ -442,8 +458,32 @@ export function WorkoutMode({
         </div>
       )}
 
+      {/* Strength-day toggle (single-day / inline mode) */}
+      {singleDayIndex != null && block.days.length > 1 && (
+        <div className="mb-4">
+          <p className="mb-1.5 text-xs font-medium text-[var(--muted)]">Strength day</p>
+          <div className="hide-scrollbar flex gap-1.5 overflow-x-auto">
+            {block.days.map((d, i) => (
+              <button
+                key={d.label}
+                onClick={() => setSelectedDay(i)}
+                className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all"
+                style={{
+                  backgroundColor: i === selectedDay ? "var(--accent)" + "30" : "var(--card)",
+                  color: i === selectedDay ? "var(--accent)" : "var(--muted)",
+                  borderWidth: 1,
+                  borderColor: i === selectedDay ? "var(--accent)" + "50" : "transparent",
+                }}
+              >
+                {d.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="space-y-5">
-        {block.days.map((day) => {
+        {daysToShow.map((day) => {
           const ids = setIdsForDay(day);
           const doneCount = ids.filter(isDone).length;
           return (

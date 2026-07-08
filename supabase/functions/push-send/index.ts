@@ -128,7 +128,7 @@ Deno.serve(async (req) => {
         await webpush.sendNotification(
           row.subscription,
           JSON.stringify({
-            title: "THOR3 Trainer",
+            title: "Rukr",
             body: first ? `${first}: ${msg}` : msg,
             tag: `thor3-reminder-${p.id}`,
           })

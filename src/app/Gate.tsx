@@ -51,7 +51,7 @@ export function Gate({
       <div className="w-full max-w-xs">
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-bold tracking-tight">
-            THOR<span style={{ color: "var(--accent)" }}>3</span>
+            Ruk<span style={{ color: "var(--accent)" }}>r</span>
           </h1>
           <p className="mt-1 text-xs uppercase tracking-widest text-[var(--muted)]">SFAS Conditioning</p>
         </div>
