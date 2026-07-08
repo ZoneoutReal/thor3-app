@@ -8,11 +8,16 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const FN_URL = `${SUPABASE_URL}/functions/v1/progress`;
 
+// A recorded value for one logged step: v = the number/time the user entered,
+// m = semantic metric (for week-over-week history), w = week it was logged in.
+export type LoggedValue = { v: string; m?: string; w?: number };
+
 export type ProgressRow = {
   profile: string;
   program: string;
   days: string[];
   sets: string[];
+  logs: Record<string, LoggedValue>;
   updated_at: string;
 };
 
@@ -52,10 +57,10 @@ export async function setReminder(profile: string, r: { hour?: number; min?: num
 
 // Debounced, patch-merging pusher. Day toggles and set toggles can both call
 // this from anywhere; only the fields provided are written server-side.
-let pending: { days?: string[]; sets?: string[] } = {};
+let pending: { days?: string[]; sets?: string[]; logs?: Record<string, LoggedValue> } = {};
 let timer: ReturnType<typeof setTimeout> | null = null;
 
-export function queuePush(patch: { days?: string[]; sets?: string[] }) {
+export function queuePush(patch: { days?: string[]; sets?: string[]; logs?: Record<string, LoggedValue> }) {
   const passcode = getPasscode();
   const profile = getProfileId();
   if (!passcode || !profile) return;
