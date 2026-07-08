@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { parseDay, fmtDuration } from "@/lib/day-steps";
+import { parseDay, fmtDuration, pacePerMile } from "@/lib/day-steps";
 import { getProgram, DAY_LABELS, TYPE_META, type DayWorkout } from "@/lib/program-data";
 import type { LoggedValue } from "@/lib/sync";
 import type { Profile } from "@/lib/profiles";
@@ -232,6 +232,7 @@ function ReadOnlyDay({
                 }
                 const stepDone = doneSets.has(`${prefix}-${step.id}`);
                 const val = logs[`${prefix}-${step.id}`]?.v;
+                const pace = val ? pacePerMile(step, val) : null;
                 return (
                   <div key={step.id} className="flex items-start gap-2 py-1">
                     <span
@@ -251,6 +252,7 @@ function ReadOnlyDay({
                         <p className="text-xs font-semibold" style={{ color: "var(--accent)" }}>
                           {val}
                           {step.input === "reps" ? " reps" : ""}
+                          {pace ? <span className="text-[var(--muted)]"> · {pace}</span> : null}
                         </p>
                       ) : (
                         <p className="text-xs text-[var(--muted)]">not logged</p>
