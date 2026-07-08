@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
         .order("sort");
       const { data: progress } = await admin
         .from("progress")
-        .select("profile, program, days, sets, updated_at");
+        .select("profile, program, days, sets, logs, updated_at");
       // Hide throwaway dev profiles (id starts with "_") from the app.
       const real = (profiles ?? []).filter((p) => !String(p.id).startsWith("_"));
       const realProgress = (progress ?? []).filter((p) => !String(p.profile).startsWith("_"));
@@ -74,6 +74,7 @@ Deno.serve(async (req) => {
       };
       if (Array.isArray(body.days)) row.days = body.days;
       if (Array.isArray(body.sets)) row.sets = body.sets;
+      if (body.logs && typeof body.logs === "object" && !Array.isArray(body.logs)) row.logs = body.logs;
       const { error } = await admin.from("progress").upsert(row);
       if (error) throw error;
       return json({ success: true });

@@ -10,6 +10,7 @@ import {
 } from "@/lib/program-data";
 import { subscribeUser, unsubscribeUser, sendTestNotification } from "@/lib/push";
 import { StrengthSheet } from "./StrengthSheet";
+import { DayLogger } from "./DayLogger";
 import { Gate } from "./Gate";
 import { Together } from "./Together";
 import { pullAll, queuePush, setReminder, type Snapshot } from "@/lib/sync";
@@ -473,12 +474,14 @@ function DayCard({
   isDone,
   onToggle,
   onOpenStrength,
+  onOpenLogger,
 }: {
   workout: DayWorkout;
   weekNum: number;
   isDone: boolean;
   onToggle: () => void;
   onOpenStrength: (week: number) => void;
+  onOpenLogger: (week: number, day: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const meta = TYPE_META[workout.type];
@@ -584,15 +587,26 @@ function DayCard({
           <button
             onClick={(e) => {
               e.stopPropagation();
+              onOpenLogger(weekNum, workout.day);
+            }}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-bold transition-colors"
+            style={{ backgroundColor: "var(--accent)", color: "#000" }}
+          >
+            {isDone ? "Log / review workout" : "Log workout"}
+            <span aria-hidden>&#8594;</span>
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
               onToggle();
             }}
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold transition-colors"
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg py-2 text-xs font-semibold transition-colors"
             style={{
-              backgroundColor: isDone ? "#22c55e20" : "var(--accent)" + "20",
-              color: isDone ? "#22c55e" : "var(--accent)",
+              backgroundColor: isDone ? "#22c55e20" : "var(--card-hover)",
+              color: isDone ? "#22c55e" : "var(--muted)",
             }}
           >
-            {isDone ? "Completed ✓" : "Mark Complete"}
+            {isDone ? "Completed ✓ (tap to undo)" : "Just mark complete"}
           </button>
         </div>
       )}
@@ -679,6 +693,7 @@ export default function Home() {
   const [showInstallBanner, setShowInstallBanner] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [strengthWeek, setStrengthWeek] = useState<number | null>(null);
+  const [loggerDay, setLoggerDay] = useState<{ week: number; day: number } | null>(null);
 
   // Identity / gate
   const [unlocked, setUnlocked] = useState<boolean | null>(null);
@@ -700,6 +715,11 @@ export default function Home() {
 
   const myProfile = snapshot?.profiles.find((p) => p.id === myProfileId);
   const firstName = myProfile?.display_name.split(" ")[0] ?? "";
+
+  // Current profile's server-side recorded values + set completion, for the logger.
+  const myRow = snapshot?.progress.find((p) => p.profile === myProfileId && p.program === "10week");
+  const serverLogs = myRow?.logs ?? {};
+  const serverSets = myRow?.sets ?? [];
 
   // Resolve identity on the client (localStorage is only available here).
   useEffect(() => {
@@ -870,6 +890,7 @@ export default function Home() {
                     isDone={isDone(week.week, day.day)}
                     onToggle={() => toggle(week.week, day.day)}
                     onOpenStrength={setStrengthWeek}
+                    onOpenLogger={(w, d) => setLoggerDay({ week: w, day: d })}
                   />
                 ))}
               </div>
@@ -915,6 +936,33 @@ export default function Home() {
           onClose={() => setShowGate(false)}
         />
       )}
+
+      {/* Day logger */}
+      {loggerDay &&
+        (() => {
+          const w = program.data.find((x) => x.week === loggerDay.week);
+          const d = w?.days.find((x) => x.day === loggerDay.day);
+          if (!d) return null;
+          return (
+            <DayLogger
+              day={d}
+              week={loggerDay.week}
+              typeLabel={TYPE_META[d.type].label}
+              dayComplete={isDone(loggerDay.week, loggerDay.day)}
+              serverLogs={serverLogs}
+              serverSets={serverSets}
+              onOpenStrength={() => {
+                setStrengthWeek(loggerDay.week);
+                setLoggerDay(null);
+              }}
+              onFinish={() => {
+                if (!isDone(loggerDay.week, loggerDay.day)) toggle(loggerDay.week, loggerDay.day);
+                setLoggerDay(null);
+              }}
+              onClose={() => setLoggerDay(null)}
+            />
+          );
+        })()}
 
       {/* Strength Sheet */}
       {strengthWeek !== null && (
