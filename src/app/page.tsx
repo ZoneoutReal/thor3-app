@@ -10,6 +10,10 @@ import {
 } from "@/lib/program-data";
 import { subscribeUser, unsubscribeUser, sendTestNotification } from "@/lib/push";
 import { StrengthSheet } from "./StrengthSheet";
+import { Gate } from "./Gate";
+import { Together } from "./Together";
+import { pullAll, queuePush, setReminder, type Snapshot } from "@/lib/sync";
+import { getPasscode, getProfileId, type Profile } from "@/lib/profiles";
 
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
@@ -85,10 +89,12 @@ function InstallBanner({
           <span className="text-lg">&#x2193;</span>
           <div className="flex-1 text-sm">
             <p className="font-semibold text-[var(--accent)]">Install THOR3</p>
-            <p className="mt-0.5 text-[var(--muted)]">
-              Tap <strong>Share</strong> then <strong>Add to Home Screen</strong> for
-              the full app experience with offline access.
-            </p>
+            <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-[var(--muted)]">
+              <li>Tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.</li>
+              <li>Open THOR3 from your home screen.</li>
+              <li>Enter the <strong>family code</strong> and tap <strong>your name</strong> to set your profile.</li>
+              <li>Turn on reminders so you get your daily nudge.</li>
+            </ol>
           </div>
           <button onClick={onDismiss} className="text-[var(--muted)] hover:text-[var(--foreground)]">
             &#x2715;
@@ -184,9 +190,118 @@ function useNotifications() {
   return { permission, subscription, loading, subscribe, unsubscribe, testNotification };
 }
 
+const HOURS = Array.from({ length: 24 }, (_, h) => h);
+const MINUTES = [0, 15, 30, 45];
+function fmt12(h: number, m: number) {
+  const ap = h < 12 ? "AM" : "PM";
+  const h12 = ((h + 11) % 12) + 1;
+  return `${h12}:${String(m).padStart(2, "0")} ${ap}`;
+}
+
+function ReminderTime({
+  myProfile,
+  onReminderSaved,
+}: {
+  myProfile?: Profile;
+  onReminderSaved: () => void;
+}) {
+  const [hour, setHour] = useState(myProfile?.reminder_hour ?? 6);
+  const [min, setMin] = useState(myProfile?.reminder_min ?? 0);
+  const [enabled, setEnabled] = useState(myProfile?.reminder_enabled ?? true);
+  const [saving, setSaving] = useState(false);
+
+  // Re-seed if the profile snapshot arrives/changes.
+  useEffect(() => {
+    if (!myProfile) return;
+    setHour(myProfile.reminder_hour);
+    setMin(myProfile.reminder_min);
+    setEnabled(myProfile.reminder_enabled);
+  }, [myProfile?.id, myProfile?.reminder_hour, myProfile?.reminder_min, myProfile?.reminder_enabled]);
+
+  const save = useCallback(
+    async (patch: { hour?: number; min?: number; enabled?: boolean }) => {
+      const pid = getProfileId();
+      if (!pid) return;
+      setSaving(true);
+      await setReminder(pid, patch);
+      setSaving(false);
+      onReminderSaved();
+    },
+    [onReminderSaved]
+  );
+
+  return (
+    <div className="mt-5 border-t border-[var(--border)] pt-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold">Daily reminder</p>
+          <p className="text-xs text-[var(--muted)]">
+            Your own time{saving ? " · saving..." : ""}
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            const next = !enabled;
+            setEnabled(next);
+            save({ enabled: next });
+          }}
+          className="relative h-6 w-11 rounded-full transition-colors"
+          style={{ backgroundColor: enabled ? "var(--accent)" : "var(--border)" }}
+          aria-label="Toggle daily reminder"
+        >
+          <span
+            className="absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all"
+            style={{ left: enabled ? "22px" : "2px" }}
+          />
+        </button>
+      </div>
+
+      {enabled && (
+        <div className="mt-3 flex items-center gap-2">
+          <select
+            value={hour}
+            onChange={(e) => {
+              const h = Number(e.target.value);
+              setHour(h);
+              save({ hour: h });
+            }}
+            className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)] outline-none"
+          >
+            {HOURS.map((h) => (
+              <option key={h} value={h}>
+                {fmt12(h, min)}
+              </option>
+            ))}
+          </select>
+          <select
+            value={min}
+            onChange={(e) => {
+              const m = Number(e.target.value);
+              setMin(m);
+              save({ min: m });
+            }}
+            className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)] outline-none"
+          >
+            {MINUTES.map((m) => (
+              <option key={m} value={m}>
+                :{String(m).padStart(2, "0")}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-[var(--muted)]">Central</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NotificationSettings({
+  myProfile,
+  onReminderSaved,
   onClose,
 }: {
+  myProfile?: Profile;
+  onReminderSaved: () => void;
   onClose: () => void;
 }) {
   const { permission, subscription, loading, subscribe, unsubscribe, testNotification } =
@@ -201,6 +316,9 @@ function NotificationSettings({
       >
         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[var(--border)]" />
         <h3 className="text-base font-bold">Notifications</h3>
+        {myProfile && (
+          <p className="mt-0.5 text-xs text-[var(--muted)]">Signed in as {myProfile.display_name}</p>
+        )}
 
         {!supported ? (
           <p className="mt-3 text-sm text-[var(--muted)]">
@@ -251,6 +369,8 @@ function NotificationSettings({
             </button>
           </div>
         )}
+
+        <ReminderTime myProfile={myProfile} onReminderSaved={onReminderSaved} />
       </div>
     </div>
   );
@@ -258,18 +378,58 @@ function NotificationSettings({
 
 // --- Progress Hook ---
 
-function useProgress(programId: string) {
-  const key = `thor3-progress-${programId}`;
+function useSyncedProgress(programId: string, profileId: string | null, unlocked: boolean) {
+  const key = profileId ? `thor3-progress-${profileId}-${programId}` : `thor3-progress-${programId}`;
+  const legacyKey = `thor3-progress-${programId}`;
   const [done, setDone] = useState<Set<string>>(new Set());
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
+  // Local-first: instant paint from this device (profile-scoped, falling back to
+  // any pre-multiuser progress the person already had).
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(key);
-      if (raw) setDone(new Set(JSON.parse(raw)));
+      const raw = localStorage.getItem(key) ?? localStorage.getItem(legacyKey);
+      setDone(raw ? new Set(JSON.parse(raw)) : new Set());
     } catch {
-      /* ignore */
+      setDone(new Set());
     }
-  }, [key]);
+  }, [key, legacyKey]);
+
+  // Pull the shared snapshot; union my server progress into local so nothing is
+  // lost across devices, then push the union back up if it added anything.
+  const hydrate = useCallback(async () => {
+    const pc = getPasscode();
+    const pid = getProfileId();
+    if (!pc || !pid) return;
+    const r = await pullAll(pc);
+    if (!r.ok || !r.snapshot) return;
+    setSnapshot(r.snapshot);
+    const mine = r.snapshot.progress.find((p) => p.profile === pid && p.program === programId);
+    if (mine) {
+      setDone((prev) => {
+        const union = new Set(prev);
+        mine.days.forEach((d) => union.add(d));
+        const arr = [...union];
+        localStorage.setItem(key, JSON.stringify(arr));
+        if (arr.length !== mine.days.length) queuePush({ days: arr });
+        return union;
+      });
+    }
+  }, [key, programId]);
+
+  useEffect(() => {
+    if (unlocked) hydrate();
+  }, [unlocked, hydrate]);
+
+  const refresh = useCallback(async () => {
+    const pc = getPasscode();
+    if (!pc) return;
+    setRefreshing(true);
+    const r = await pullAll(pc);
+    if (r.ok && r.snapshot) setSnapshot(r.snapshot);
+    setRefreshing(false);
+  }, []);
 
   const toggle = useCallback(
     (week: number, day: number) => {
@@ -278,19 +438,18 @@ function useProgress(programId: string) {
         const next = new Set(prev);
         if (next.has(id)) next.delete(id);
         else next.add(id);
-        localStorage.setItem(key, JSON.stringify([...next]));
+        const arr = [...next];
+        localStorage.setItem(key, JSON.stringify(arr));
+        queuePush({ days: arr });
         return next;
       });
     },
     [key]
   );
 
-  const isDone = useCallback(
-    (week: number, day: number) => done.has(`${week}-${day}`),
-    [done]
-  );
+  const isDone = useCallback((week: number, day: number) => done.has(`${week}-${day}`), [done]);
 
-  return { isDone, toggle, count: done.size };
+  return { isDone, toggle, count: done.size, done, snapshot, refresh, refreshing };
 }
 
 // --- UI Components ---
@@ -458,6 +617,60 @@ function WeekProgress({ total, completed }: { total: number; completed: number }
   );
 }
 
+// --- Bottom tab bar ---
+
+function TabBar({
+  active,
+  onChange,
+}: {
+  active: "workout" | "together";
+  onChange: (t: "workout" | "together") => void;
+}) {
+  const tabs: { id: "workout" | "together"; label: string; icon: React.ReactNode }[] = [
+    {
+      id: "workout",
+      label: "Workout",
+      icon: (
+        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+          <path d="M4 9v6 M7 6v12 M17 6v12 M20 9v6 M7 12h10" />
+        </svg>
+      ),
+    },
+    {
+      id: "together",
+      label: "Together",
+      icon: (
+        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2 M9 7a4 4 0 100 8 4 4 0 000-8 M23 21v-2a4 4 0 00-3-3.87 M16 3.13a4 4 0 010 7.75" />
+        </svg>
+      ),
+    },
+  ];
+  return (
+    <nav
+      className="fixed inset-x-0 bottom-0 z-20 border-t border-[var(--border)] bg-[var(--background)]/95 backdrop-blur-sm"
+      style={{ paddingBottom: "max(0.25rem, env(safe-area-inset-bottom))" }}
+    >
+      <div className="mx-auto flex max-w-lg">
+        {tabs.map((t) => {
+          const on = active === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => onChange(t.id)}
+              className="flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[11px] font-semibold transition-colors"
+              style={{ color: on ? "var(--accent)" : "var(--muted)" }}
+            >
+              {t.icon}
+              <span>{t.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
 // --- Main Page ---
 
 export default function Home() {
@@ -467,13 +680,48 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [strengthWeek, setStrengthWeek] = useState<number | null>(null);
 
+  // Identity / gate
+  const [unlocked, setUnlocked] = useState<boolean | null>(null);
+  const [myProfileId, setMyProfileId] = useState<string | null>(null);
+  const [showGate, setShowGate] = useState(false);
+  const [activeTab, setActiveTab] = useState<"workout" | "together">("workout");
+
   const [weekIdx, setWeekIdx] = useState(0);
   const program = getProgram("10week")!;
   const week = program.data[weekIdx];
-  const { isDone, toggle, count } = useProgress("10week");
+  const { isDone, toggle, count, done, snapshot, refresh, refreshing } = useSyncedProgress(
+    "10week",
+    myProfileId,
+    unlocked === true
+  );
 
   const weekCompleted = week.days.filter((d) => isDone(week.week, d.day)).length;
   const totalDays = program.data.reduce((sum, w) => sum + w.days.length, 0);
+
+  const myProfile = snapshot?.profiles.find((p) => p.id === myProfileId);
+  const firstName = myProfile?.display_name.split(" ")[0] ?? "";
+
+  // Resolve identity on the client (localStorage is only available here).
+  useEffect(() => {
+    const pid = getProfileId();
+    setMyProfileId(pid);
+    setUnlocked(!!(getPasscode() && pid));
+  }, []);
+
+  // Freshen the shared snapshot whenever the Together tab is opened.
+  useEffect(() => {
+    if (activeTab === "together" && unlocked) refresh();
+  }, [activeTab, unlocked, refresh]);
+
+  const handleUnlock = useCallback(() => {
+    setMyProfileId(getProfileId());
+    setUnlocked(true);
+    setShowGate(false);
+  }, []);
+
+  // First run (or a wiped passcode): show the gate full-screen.
+  if (unlocked === null) return <div className="min-h-screen bg-[var(--background)]" />;
+  if (!unlocked) return <Gate onUnlock={handleUnlock} />;
 
   return (
     <div className="flex min-h-screen flex-col font-sans">
@@ -485,7 +733,19 @@ export default function Home() {
               <h1 className="text-xl font-bold tracking-tight">
                 THOR<span style={{ color: "var(--accent)" }}>3</span>
               </h1>
-              <p className="text-xs text-[var(--muted)]">SFAS Conditioning</p>
+              <button
+                onClick={() => snapshot && setShowGate(true)}
+                className="mt-0.5 flex items-center gap-1 text-xs text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
+              >
+                <span
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold"
+                  style={{ backgroundColor: "var(--accent)" + "22", color: "var(--accent)" }}
+                >
+                  {firstName.slice(0, 1) || "?"}
+                </span>
+                <span>{firstName || "Set profile"}</span>
+                <span aria-hidden>&#8964;</span>
+              </button>
             </div>
             <div className="flex items-center gap-3">
               <button
@@ -514,116 +774,147 @@ export default function Home() {
               </div>
             </div>
           </div>
-
         </div>
       </header>
 
-      {/* Install banner */}
-      {showInstallBanner && !isInstalled && (
-        <div className="border-b border-[var(--border)] bg-[var(--background)] py-2">
-          <InstallBanner
-            isIOS={isIOS}
-            deferredPrompt={deferredPrompt}
-            onInstall={install}
-            onDismiss={() => setShowInstallBanner(false)}
-          />
-        </div>
-      )}
+      {activeTab === "workout" ? (
+        <>
+          {/* Install banner */}
+          {showInstallBanner && !isInstalled && (
+            <div className="border-b border-[var(--border)] bg-[var(--background)] py-2">
+              <InstallBanner
+                isIOS={isIOS}
+                deferredPrompt={deferredPrompt}
+                onInstall={install}
+                onDismiss={() => setShowInstallBanner(false)}
+              />
+            </div>
+          )}
 
-      {/* Week selector */}
-      <div className="border-b border-[var(--border)] bg-[var(--background)]">
-        <div className="mx-auto max-w-lg px-4 py-3">
-          <div className="hide-scrollbar flex gap-1.5 overflow-x-auto">
-            {program.data.map((w, i) => {
-              const wDone = w.days.filter((d) => isDone(w.week, d.day)).length;
-              const allDone = wDone === w.days.length;
-              return (
-                <button
-                  key={w.week}
-                  onClick={() => setWeekIdx(i)}
-                  className="relative flex shrink-0 flex-col items-center rounded-lg px-3 py-1.5 text-xs font-semibold transition-all"
-                  style={{
-                    backgroundColor:
-                      weekIdx === i
-                        ? "var(--accent)" + "30"
-                        : allDone
-                        ? "#22c55e15"
-                        : "var(--card)",
-                    color:
-                      weekIdx === i
-                        ? "var(--accent)"
-                        : allDone
-                        ? "#22c55e"
-                        : "var(--muted)",
-                    borderWidth: 1,
-                    borderColor:
-                      weekIdx === i
-                        ? "var(--accent)" + "50"
-                        : "transparent",
-                  }}
-                >
-                  <span>W{w.week}</span>
-                  {wDone > 0 && (
-                    <span className="mt-0.5 text-[10px]">
-                      {wDone}/{w.days.length}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* Week content */}
-      <main className="flex-1">
-        <div className="mx-auto max-w-lg px-4 py-4">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-bold">Week {week.week}</h2>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setWeekIdx(Math.max(0, weekIdx - 1))}
-                disabled={weekIdx === 0}
-                className="rounded-lg bg-[var(--card)] px-3 py-1 text-sm text-[var(--muted)] transition-colors hover:bg-[var(--card-hover)] disabled:opacity-30"
-              >
-                &#8592;
-              </button>
-              <button
-                onClick={() =>
-                  setWeekIdx(Math.min(program.data.length - 1, weekIdx + 1))
-                }
-                disabled={weekIdx === program.data.length - 1}
-                className="rounded-lg bg-[var(--card)] px-3 py-1 text-sm text-[var(--muted)] transition-colors hover:bg-[var(--card-hover)] disabled:opacity-30"
-              >
-                &#8594;
-              </button>
+          {/* Week selector */}
+          <div className="border-b border-[var(--border)] bg-[var(--background)]">
+            <div className="mx-auto max-w-lg px-4 py-3">
+              <div className="hide-scrollbar flex gap-1.5 overflow-x-auto">
+                {program.data.map((w, i) => {
+                  const wDone = w.days.filter((d) => isDone(w.week, d.day)).length;
+                  const allDone = wDone === w.days.length;
+                  return (
+                    <button
+                      key={w.week}
+                      onClick={() => setWeekIdx(i)}
+                      className="relative flex shrink-0 flex-col items-center rounded-lg px-3 py-1.5 text-xs font-semibold transition-all"
+                      style={{
+                        backgroundColor:
+                          weekIdx === i
+                            ? "var(--accent)" + "30"
+                            : allDone
+                            ? "#22c55e15"
+                            : "var(--card)",
+                        color:
+                          weekIdx === i
+                            ? "var(--accent)"
+                            : allDone
+                            ? "#22c55e"
+                            : "var(--muted)",
+                        borderWidth: 1,
+                        borderColor:
+                          weekIdx === i ? "var(--accent)" + "50" : "transparent",
+                      }}
+                    >
+                      <span>W{w.week}</span>
+                      {wDone > 0 && (
+                        <span className="mt-0.5 text-[10px]">
+                          {wDone}/{w.days.length}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          <WeekProgress total={week.days.length} completed={weekCompleted} />
+          {/* Week content */}
+          <main className="flex-1 pb-24">
+            <div className="mx-auto max-w-lg px-4 py-4">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-bold">Week {week.week}</h2>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setWeekIdx(Math.max(0, weekIdx - 1))}
+                    disabled={weekIdx === 0}
+                    className="rounded-lg bg-[var(--card)] px-3 py-1 text-sm text-[var(--muted)] transition-colors hover:bg-[var(--card-hover)] disabled:opacity-30"
+                  >
+                    &#8592;
+                  </button>
+                  <button
+                    onClick={() =>
+                      setWeekIdx(Math.min(program.data.length - 1, weekIdx + 1))
+                    }
+                    disabled={weekIdx === program.data.length - 1}
+                    className="rounded-lg bg-[var(--card)] px-3 py-1 text-sm text-[var(--muted)] transition-colors hover:bg-[var(--card-hover)] disabled:opacity-30"
+                  >
+                    &#8594;
+                  </button>
+                </div>
+              </div>
 
-          <div className="mt-4 flex flex-col gap-2">
-            {week.days.map((day) => (
-              <DayCard
-                key={day.day}
-                workout={day}
-                weekNum={week.week}
-                isDone={isDone(week.week, day.day)}
-                onToggle={() => toggle(week.week, day.day)}
-                onOpenStrength={setStrengthWeek}
-              />
-            ))}
-          </div>
-        </div>
-      </main>
+              <WeekProgress total={week.days.length} completed={weekCompleted} />
 
-      {/* Footer */}
-      <footer className="border-t border-[var(--border)] py-4 text-center text-xs text-[var(--muted)]">
-        THOR3 SFAS Conditioning Program
-      </footer>
+              <div className="mt-4 flex flex-col gap-2">
+                {week.days.map((day) => (
+                  <DayCard
+                    key={day.day}
+                    workout={day}
+                    weekNum={week.week}
+                    isDone={isDone(week.week, day.day)}
+                    onToggle={() => toggle(week.week, day.day)}
+                    onOpenStrength={setStrengthWeek}
+                  />
+                ))}
+              </div>
+            </div>
+          </main>
+        </>
+      ) : (
+        <main className="flex-1 pb-24">
+          {snapshot ? (
+            <Together
+              snapshot={snapshot}
+              myProfileId={myProfileId}
+              myDays={[...done]}
+              onRefresh={refresh}
+              refreshing={refreshing}
+            />
+          ) : (
+            <div className="mx-auto max-w-lg px-4 py-16 text-center text-sm text-[var(--muted)]">
+              Loading progress...
+            </div>
+          )}
+        </main>
+      )}
+
+      {/* Bottom tabs */}
+      <TabBar active={activeTab} onChange={setActiveTab} />
 
       {/* Notification Settings */}
-      {showSettings && <NotificationSettings onClose={() => setShowSettings(false)} />}
+      {showSettings && (
+        <NotificationSettings
+          myProfile={myProfile}
+          onReminderSaved={refresh}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      {/* Switch profile */}
+      {showGate && snapshot && (
+        <Gate
+          initialStep="pick"
+          knownProfiles={snapshot.profiles}
+          onUnlock={handleUnlock}
+          onClose={() => setShowGate(false)}
+        />
+      )}
 
       {/* Strength Sheet */}
       {strengthWeek !== null && (
