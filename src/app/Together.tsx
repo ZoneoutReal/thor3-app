@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { getProgram } from "@/lib/program-data";
 import type { Snapshot } from "@/lib/sync";
+import { PersonDetail } from "./PersonDetail";
 
 function timeAgo(iso?: string): string {
   if (!iso) return "no activity yet";
@@ -35,9 +37,15 @@ export function Together({
   const weeks = program.data;
   const total = weeks.reduce((s, w) => s + w.days.length, 0);
 
+  // Which member's read-only workout details are open (null = the list).
+  const [detailId, setDetailId] = useState<string | null>(null);
+
   const progById = Object.fromEntries(
     snapshot.progress.filter((p) => p.program === programId).map((p) => [p.profile, p])
   );
+
+  const detailProfile = detailId ? snapshot.profiles.find((p) => p.id === detailId) : null;
+  const detailRow = detailId ? progById[detailId] : undefined;
 
   const cards = snapshot.profiles.map((pr) => {
     const row = progById[pr.id];
@@ -85,13 +93,15 @@ export function Together({
           const pct = total > 0 ? (doneCount / total) * 100 : 0;
           const isMe = pr.id === myProfileId;
           return (
-            <div
+            <button
               key={pr.id}
-              className="rounded-xl border p-4"
+              onClick={() => setDetailId(pr.id)}
+              className="w-full rounded-xl border p-4 text-left transition-colors hover:bg-[var(--card-hover)]"
               style={{
                 borderColor: isMe ? "var(--accent)" + "50" : "var(--border)",
                 backgroundColor: isMe ? "var(--accent)" + "08" : "var(--card)",
               }}
+              aria-label={`View ${pr.display_name}'s workout details`}
             >
               <div className="flex items-center gap-3">
                 <span
@@ -161,14 +171,31 @@ export function Together({
                   );
                 })}
               </div>
-            </div>
+
+              <div className="mt-3 flex items-center justify-end gap-1 text-[11px] font-semibold" style={{ color: "var(--accent)" }}>
+                <span>View workout details</span>
+                <span aria-hidden>&#8594;</span>
+              </div>
+            </button>
           );
         })}
       </div>
 
       <p className="mt-4 text-center text-[11px] text-[var(--muted)]">
-        Week grid, left to right = weeks 1&ndash;{weeks.length}. Green means done.
+        Week grid, left to right = weeks 1&ndash;{weeks.length}. Green means done. Tap a card to see the details.
       </p>
+
+      {detailProfile && (
+        <PersonDetail
+          profile={detailProfile}
+          days={detailProfile.id === myProfileId ? myDays : detailRow?.days ?? []}
+          sets={detailRow?.sets ?? []}
+          logs={detailRow?.logs ?? {}}
+          programId={programId}
+          isMe={detailProfile.id === myProfileId}
+          onClose={() => setDetailId(null)}
+        />
+      )}
     </div>
   );
 }
