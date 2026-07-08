@@ -40,8 +40,9 @@ Deno.serve(async (req) => {
   }
 
   const cfg = await loadConfig();
-  const passcode = String(body.passcode ?? "");
-  if (!cfg.family_passcode || passcode !== cfg.family_passcode) {
+  // Case-insensitive so the code works no matter how the phone keyboard cased it.
+  const passcode = String(body.passcode ?? "").trim().toLowerCase();
+  if (!cfg.family_passcode || passcode !== cfg.family_passcode.trim().toLowerCase()) {
     return json({ error: "unauthorized" }, 401);
   }
 
