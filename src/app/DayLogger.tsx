@@ -221,6 +221,18 @@ function StepRow({
   onValue: (v: string) => void;
   onToggle: (v?: boolean) => void;
 }) {
+  // A step that expects a value (reps / time / distance) can't be checked off
+  // until that value is logged. Steps with nothing to record (input === "none",
+  // e.g. "Repeat 4x") stay freely checkable.
+  const needsValue = step.input !== "none";
+  const hasValue = value.trim() !== "";
+  const canComplete = !needsValue || hasValue;
+  const complete = (v?: boolean) => {
+    const next = v === undefined ? !done : v;
+    if (next && !canComplete) return; // block completing before the value is logged
+    onToggle(next);
+  };
+
   return (
     <div
       className="rounded-lg border p-3 transition-colors"
@@ -231,14 +243,15 @@ function StepRow({
     >
       <div className="flex items-start gap-3">
         <button
-          onClick={() => onToggle()}
-          className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-sm"
+          onClick={() => complete()}
+          disabled={!done && !canComplete}
+          className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-sm transition-colors disabled:opacity-40"
           style={{
             borderColor: done ? "var(--success)" : "var(--border)",
             backgroundColor: done ? "var(--success)" : "transparent",
             color: done ? "#000" : "var(--muted)",
           }}
-          aria-label="Mark step done"
+          aria-label={done ? "Mark step not done" : canComplete ? "Mark step done" : "Log your reps first"}
         >
           {done ? "✓" : ""}
         </button>
@@ -254,7 +267,7 @@ function StepRow({
       </div>
 
       {step.timer?.mode === "countdown" && (
-        <CountdownTimer seconds={step.timer.seconds} done={done} onExpire={() => onToggle(true)} />
+        <CountdownTimer seconds={step.timer.seconds} done={done} onExpire={() => complete(true)} />
       )}
       {step.timer?.mode === "stopwatch" && (
         <Stopwatch onStop={(sec) => { onValue(fmtClock(sec)); onToggle(true); }} />
@@ -273,6 +286,12 @@ function StepRow({
             {step.input === "reps" ? "reps" : step.unit === "mm:ss" ? "your time" : step.unit}
           </span>
         </div>
+      )}
+
+      {needsValue && !hasValue && !done && (
+        <p className="mt-1.5 text-[11px] text-[var(--muted)]">
+          Log your {step.input === "reps" ? "reps" : step.input === "distance" ? "distance" : "time"} to check this off.
+        </p>
       )}
 
       {step.rest ? (
@@ -335,6 +354,10 @@ export function DayLogger({
     return () => clearInterval(id);
   }, [running]);
 
+  // Fitbod-style 3-2-1-GO pre-roll. Null = inactive; 3/2/1 count down; 0 = GO,
+  // the moment we stamp the start so elapsed counts from "GO", not the tap.
+  const [preCount, setPreCount] = useState<number | null>(null);
+
   const elapsedSec = startedAt ? Math.max(0, Math.floor((Date.now() - Date.parse(startedAt)) / 1000)) : 0;
 
   const startSession = () => setLog(startKey, new Date().toISOString(), "session-start", week);
@@ -343,6 +366,21 @@ export function DayLogger({
     setLog(durKey, "", "session-duration", week);
     setLog(startKey, new Date().toISOString(), "session-start", week);
   };
+  const beginCountdown = () => {
+    if (preCount == null) setPreCount(3);
+  };
+  useEffect(() => {
+    if (preCount == null) return;
+    if (preCount > 0) {
+      const id = setTimeout(() => setPreCount((c) => (c == null ? null : c - 1)), 1000);
+      return () => clearTimeout(id);
+    }
+    // preCount === 0 -> GO: stamp the start, then clear after a brief flash.
+    startSession();
+    const id = setTimeout(() => setPreCount(null), 650);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preCount]);
   // Finishing opens a confirm step: the counted time is pre-filled and editable,
   // and can be typed by hand if the timer was never started.
   const [confirming, setConfirming] = useState(false);
@@ -435,7 +473,7 @@ export function DayLogger({
                   <p className="mt-0.5 text-xs text-[var(--muted)]">Keeps counting while your phone is locked.</p>
                 </div>
                 <button
-                  onClick={startSession}
+                  onClick={beginCountdown}
                   className="shrink-0 rounded-lg px-6 py-2.5 text-sm font-bold transition-colors"
                   style={{ backgroundColor: "var(--accent)", color: "#000" }}
                 >
@@ -594,6 +632,27 @@ export function DayLogger({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 3-2-1-GO pre-roll. Tap to cancel before GO. */}
+      {preCount != null && (
+        <div
+          className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/85"
+          onClick={() => {
+            if (preCount > 0) setPreCount(null);
+          }}
+        >
+          <span
+            key={preCount}
+            className="font-mono text-8xl font-black tabular-nums"
+            style={{ color: "var(--accent)" }}
+          >
+            {preCount > 0 ? preCount : "GO"}
+          </span>
+          <span className="mt-6 text-xs font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
+            {preCount > 0 ? "Get ready" : "Timer running"}
+          </span>
         </div>
       )}
     </div>
