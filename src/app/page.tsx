@@ -15,6 +15,7 @@ import { StrengthSheet } from "./StrengthSheet";
 import { DayLogger } from "./DayLogger";
 import { Gate } from "./Gate";
 import { Together } from "./Together";
+import { Metrics } from "./Metrics";
 import { pullAll, queuePush, setReminder, setActiveProgram, onSyncStatus, type Snapshot, type SyncStatus } from "@/lib/sync";
 import { getPasscode, getProfileId, type Profile } from "@/lib/profiles";
 import { getProgramPref, setProgramPref, getStartDate, setStartDate, currentPosition } from "@/lib/program-prefs";
@@ -703,20 +704,31 @@ function WeekProgress({ total, completed }: { total: number; completed: number }
 
 // --- Bottom tab bar ---
 
+type TabId = "workout" | "metrics" | "together";
+
 function TabBar({
   active,
   onChange,
 }: {
-  active: "workout" | "together";
-  onChange: (t: "workout" | "together") => void;
+  active: TabId;
+  onChange: (t: TabId) => void;
 }) {
-  const tabs: { id: "workout" | "together"; label: string; icon: React.ReactNode }[] = [
+  const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
     {
       id: "workout",
       label: "Workout",
       icon: (
         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
           <path d="M4 9v6 M7 6v12 M17 6v12 M20 9v6 M7 12h10" />
+        </svg>
+      ),
+    },
+    {
+      id: "metrics",
+      label: "Metrics",
+      icon: (
+        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 3v18h18 M7 14l4-4 3 3 5-6" />
         </svg>
       ),
     },
@@ -769,7 +781,7 @@ export default function Home() {
   const [unlocked, setUnlocked] = useState<boolean | null>(null);
   const [myProfileId, setMyProfileId] = useState<string | null>(null);
   const [showGate, setShowGate] = useState(false);
-  const [activeTab, setActiveTab] = useState<"workout" | "together">("workout");
+  const [activeTab, setActiveTab] = useState<TabId>("workout");
 
   // Program selection + start-date anchor (per profile, stored locally).
   const [selectedProgram, setSelectedProgram] = useState<string>("10week");
@@ -823,9 +835,9 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProgram, myProfileId, startDate]);
 
-  // Freshen the shared snapshot whenever the Together tab is opened.
+  // Freshen the shared snapshot whenever the Together or Metrics tab is opened.
   useEffect(() => {
-    if (activeTab === "together" && unlocked) refresh();
+    if ((activeTab === "together" || activeTab === "metrics") && unlocked) refresh();
   }, [activeTab, unlocked, refresh]);
 
   const handleUnlock = useCallback(() => {
@@ -1020,6 +1032,10 @@ export default function Home() {
             </div>
           </main>
         </>
+      ) : activeTab === "metrics" ? (
+        <main className="flex-1 pb-24">
+          <Metrics serverLogs={serverLogs} profileId={myProfileId} programId={selectedProgram} />
+        </main>
       ) : (
         <main className="flex-1 pb-24">
           {snapshot ? (
