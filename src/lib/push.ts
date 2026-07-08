@@ -1,6 +1,9 @@
 // Client-side push helpers. These call the Supabase `push-subscribe` edge
 // function, which owns the subscription table and sends via web-push/VAPID.
-// (Replaces the old Next.js server actions, which can't exist in a static export.)
+// Every call carries the family passcode; `subscribe` also tags the row with the
+// current profile so Jon's phone and Brody's phone are two separate channels.
+
+import { getPasscode, getProfileId } from "./profiles";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -17,7 +20,7 @@ async function callPush(payload: Record<string, unknown>) {
         "Content-Type": "application/json",
         ...(ANON ? { apikey: ANON, Authorization: `Bearer ${ANON}` } : {}),
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ passcode: getPasscode() ?? "", ...payload }),
     });
     return (await res.json().catch(() => ({}))) as { success?: boolean; error?: string };
   } catch (e) {
@@ -26,7 +29,7 @@ async function callPush(payload: Record<string, unknown>) {
 }
 
 export function subscribeUser(subscription: PushSubscriptionJSON) {
-  return callPush({ action: "subscribe", subscription });
+  return callPush({ action: "subscribe", subscription, profile: getProfileId() });
 }
 
 export function unsubscribeUser(endpoint?: string) {

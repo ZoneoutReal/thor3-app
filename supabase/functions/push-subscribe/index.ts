@@ -34,16 +34,27 @@ Deno.serve(async (req) => {
   } catch {
     return json({ error: "invalid body" }, 400);
   }
+
+  const cfg = await loadConfig();
+  // Family-passcode gated, same key the app already holds for progress sync.
+  const passcode = String(body.passcode ?? "");
+  if (!cfg.family_passcode || passcode !== cfg.family_passcode) {
+    return json({ error: "unauthorized" }, 401);
+  }
+
   const action = body.action as string;
 
   try {
     if (action === "subscribe") {
       const sub = body.subscription as { endpoint?: string } | undefined;
       if (!sub?.endpoint) return json({ error: "no subscription" }, 400);
+      // profile tags the subscription so the two phones are two channels.
+      const profile = (body.profile as string | undefined) ?? null;
       const { error } = await admin.from("push_subscriptions").upsert({
         endpoint: sub.endpoint,
         subscription: sub,
         user_agent: req.headers.get("user-agent"),
+        profile,
       });
       if (error) throw error;
       return json({ success: true });
@@ -60,17 +71,25 @@ Deno.serve(async (req) => {
       if (!endpoint) return json({ error: "no endpoint" }, 400);
       const { data } = await admin
         .from("push_subscriptions")
-        .select("subscription")
+        .select("subscription, profile")
         .eq("endpoint", endpoint)
         .maybeSingle();
       if (!data) return json({ error: "not subscribed" }, 404);
-      const cfg = await loadConfig();
+      let name = "";
+      if (data.profile) {
+        const { data: p } = await admin
+          .from("profiles")
+          .select("display_name")
+          .eq("id", data.profile)
+          .maybeSingle();
+        name = (p?.display_name ?? "").split(" ")[0];
+      }
       webpush.setVapidDetails(cfg.vapid_subject, cfg.vapid_public, cfg.vapid_private);
       await webpush.sendNotification(
         data.subscription,
         JSON.stringify({
           title: "THOR3 Trainer",
-          body: "Test notification — THOR3 is wired up.",
+          body: name ? `${name}, notifications are wired up.` : "Test notification — THOR3 is wired up.",
           tag: "thor3-reminder",
         })
       );

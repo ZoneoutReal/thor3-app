@@ -9,6 +9,8 @@ import {
   type StrengthRow,
   type ParsedSet,
 } from "@/lib/program-data";
+import { queuePush } from "@/lib/sync";
+import { getProfileId } from "@/lib/profiles";
 
 function mmss(s: number) {
   return `${Math.floor(s / 60)}:${String(Math.max(0, s % 60)).padStart(2, "0")}`;
@@ -31,21 +33,26 @@ function vibrate(ms: number) {
 // --- Per-set completion state, persisted per program ---
 
 function useSetProgress(programId: string) {
-  const key = `thor3-sets-${programId}`;
+  const pid = getProfileId();
+  const key = pid ? `thor3-sets-${pid}-${programId}` : `thor3-sets-${programId}`;
+  const legacyKey = `thor3-sets-${programId}`;
   const [done, setDone] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(key);
+      const raw = localStorage.getItem(key) ?? localStorage.getItem(legacyKey);
       if (raw) setDone(new Set(JSON.parse(raw)));
     } catch {
       /* ignore */
     }
-  }, [key]);
+  }, [key, legacyKey]);
 
   const write = useCallback(
     (next: Set<string>) => {
-      localStorage.setItem(key, JSON.stringify([...next]));
+      const arr = [...next];
+      localStorage.setItem(key, JSON.stringify(arr));
+      // Share set-level logging to the server (partial update: only sets).
+      queuePush({ sets: arr });
       return next;
     },
     [key]
