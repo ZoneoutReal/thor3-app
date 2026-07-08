@@ -35,6 +35,19 @@ function humanize(metric: string): string {
   return metric.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// Miles encoded in a `run-<dist><unit>` metric key, for pace math. Null if the
+// metric carries no distance (so pace doesn't apply).
+function metricMiles(metric: string): number | null {
+  const m = metric.match(/^run-(\d+(?:\.\d+)?)(mi|km|m)$/);
+  if (!m) return null;
+  const v = parseFloat(m[1]);
+  return m[2] === "mi" ? v : m[2] === "km" ? v * 0.621371 : v / 1609.344;
+}
+
+function paceStr(sec: number, miles: number): string {
+  return `${fmtClock(Math.round(sec / miles))} /mi`;
+}
+
 function buildSeries(logs: Record<string, LoggedValue>): Series[] {
   const byMetric = new Map<string, { pts: Point[]; isTime: boolean }>();
   for (const val of Object.values(logs)) {
@@ -149,6 +162,7 @@ function MetricCard({ series }: { series: Series }) {
     : "no change";
   const color = delta === 0 ? "var(--muted)" : improved ? "var(--success)" : "#ef4444";
   const best = isTime ? Math.min(...points.map((p) => p.n)) : Math.max(...points.map((p) => p.n));
+  const miles = isTime ? metricMiles(series.metric) : null;
 
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
@@ -156,13 +170,19 @@ function MetricCard({ series }: { series: Series }) {
         <div className="min-w-0">
           <p className="truncate text-sm font-bold text-[var(--foreground)]">{series.label}</p>
           <p className="mt-0.5 text-xs text-[var(--muted)]">
-            {isTime ? "Best" : "Peak"} {fmtValue(best, isTime)} &middot; {points.length} sessions
+            {isTime ? "Best" : "Peak"} {fmtValue(best, isTime)}
+            {miles ? ` (${paceStr(best, miles)})` : ""} &middot; {points.length} sessions
           </p>
         </div>
         <div className="shrink-0 text-right">
           <p className="font-mono text-lg font-bold tabular-nums text-[var(--foreground)]">
             {fmtValue(last, isTime)}
           </p>
+          {miles && (
+            <p className="text-[11px] font-semibold" style={{ color: "var(--accent)" }}>
+              {paceStr(last, miles)}
+            </p>
+          )}
           <p className="text-xs font-semibold" style={{ color }}>
             {arrow} {delta === 0 ? word : `${fmtDelta(Math.abs(delta), isTime)} ${word}`}
           </p>

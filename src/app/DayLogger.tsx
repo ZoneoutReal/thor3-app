@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { parseDay, fmtClock, fmtDuration, type DayStep } from "@/lib/day-steps";
+import { parseDay, fmtClock, fmtDuration, pacePerMile, type DayStep } from "@/lib/day-steps";
 import { queuePush, type LoggedValue } from "@/lib/sync";
 import { getProfileId } from "@/lib/profiles";
 import { getStrengthBlockForWeek, type DayWorkout } from "@/lib/program-data";
@@ -286,6 +286,11 @@ function StepRow({
           <span className="text-xs text-[var(--muted)]">
             {step.input === "reps" ? "reps" : step.unit === "mm:ss" ? "your time" : step.unit}
           </span>
+          {pacePerMile(step, value) && (
+            <span className="ml-auto text-xs font-semibold" style={{ color: "var(--accent)" }}>
+              {pacePerMile(step, value)}
+            </span>
+          )}
         </div>
       )}
 

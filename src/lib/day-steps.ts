@@ -227,6 +227,40 @@ export function fmtDuration(totalSec: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+// Miles covered by a run/ruck step, pulled from its text (label or metric).
+// Returns null when there's no distance to read.
+export function distanceMiles(text: string): number | null {
+  const d = distanceUnit(text);
+  if (!d) return null;
+  if (d.unit === "mi") return d.value;
+  if (d.unit === "km") return d.value * 0.621371;
+  return d.value / 1609.344; // meters
+}
+
+// A clock string ("19:07", "1:02:05") to seconds, or null if not a clock. A
+// bare number is rejected here (ambiguous minutes vs seconds) so pace only
+// shows when the user logged an actual time.
+function clockToSeconds(s: string): number | null {
+  const m = s.trim().match(/^(?:(\d+):)?(\d{1,2}):(\d{1,2})$/);
+  if (!m) return null;
+  const h = m[1] ? parseInt(m[1], 10) : 0;
+  const min = parseInt(m[2], 10);
+  const sec = parseInt(m[3], 10);
+  if (sec >= 60) return null;
+  return h * 3600 + min * 60 + sec;
+}
+
+// Pace per mile for a timed running set, e.g. "9:34 /mi". Null when the step
+// isn't a timed distance or the value isn't a readable time.
+export function pacePerMile(step: DayStep, value: string): string | null {
+  if (step.input !== "time") return null;
+  const miles = distanceMiles(step.label) ?? distanceMiles(step.metric ?? "");
+  if (!miles || miles <= 0) return null;
+  const secs = clockToSeconds(value);
+  if (secs == null || secs <= 0) return null;
+  return `${fmtClock(Math.round(secs / miles))} /mi`;
+}
+
 // Does this day have anything worth logging (i.e. not a pure rest day)?
 export function isLoggable(type: WorkoutType): boolean {
   return type !== "rest";
