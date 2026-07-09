@@ -43,7 +43,12 @@ function describeDay(id: string): string {
 // Best-effort family nudge: when a member marks a workout complete, push a
 // notification to everyone else who shares the family code. Never throws into
 // the write path (the caller wraps it); a failed send just drops.
-async function notifyFamily(cfg: Record<string, string>, completer: string, newlyDone: string[]) {
+async function notifyFamily(
+  cfg: Record<string, string>,
+  completer: string,
+  newlyDone: string[],
+  label?: string
+) {
   if (!cfg.vapid_public || !cfg.vapid_private || !cfg.vapid_subject) return;
 
   const { data: me } = await admin
@@ -52,14 +57,24 @@ async function notifyFamily(cfg: Record<string, string>, completer: string, newl
     .eq("id", completer)
     .maybeSingle();
   const first = ((me?.display_name as string) ?? "").split(" ")[0] || "Someone";
-  const body =
+  // Prefer the client-sent workout label ("a 3-mile ruck") for a single
+  // completion; otherwise fall back to the week/day or a plural count.
+  const what =
     newlyDone.length > 1
-      ? `${first} just finished ${newlyDone.length} workouts 💪`
-      : `${first} finished ${describeDay(newlyDone[0])} 💪`;
+      ? `${newlyDone.length} workouts`
+      : label && label.trim()
+      ? label.trim()
+      : describeDay(newlyDone[0]);
+  const body = `${first} finished ${what} 💪`;
 
-  // Everyone in the family except the person who logged it (and dev profiles).
-  const { data: others } = await admin.from("profiles").select("id").neq("id", completer);
+  // Everyone in the family who wants activity pings, except the person who
+  // logged it (and dev profiles).
+  const { data: others } = await admin
+    .from("profiles")
+    .select("id, activity_notify")
+    .neq("id", completer);
   const recipientIds = (others ?? [])
+    .filter((o: { id: string; activity_notify: boolean | null }) => o.activity_notify !== false)
     .map((o: { id: string }) => o.id)
     .filter((id) => !String(id).startsWith("_"));
   if (recipientIds.length === 0) return;
@@ -108,7 +123,7 @@ Deno.serve(async (req) => {
     if (action === "pull") {
       const { data: profiles } = await admin
         .from("profiles")
-        .select("id, display_name, reminder_enabled, reminder_hour, reminder_min, tz, sort")
+        .select("id, display_name, reminder_enabled, reminder_hour, reminder_min, tz, sort, activity_notify")
         .order("sort");
       const { data: progress } = await admin
         .from("progress")
@@ -158,8 +173,12 @@ Deno.serve(async (req) => {
       // existing row (skip a profile's first-ever sync and bulk backfills), and
       // never let a push failure fail the write the client is waiting on.
       if (hadRow && newlyDone.length >= 1 && newlyDone.length <= 3 && !profile.startsWith("_")) {
+        // Use the client's label only when it matches the single day just completed.
+        const hint = body.done as { id?: string; label?: string } | undefined;
+        const label =
+          newlyDone.length === 1 && hint?.id === newlyDone[0] ? hint?.label : undefined;
         try {
-          await notifyFamily(cfg, profile, newlyDone);
+          await notifyFamily(cfg, profile, newlyDone, label);
         } catch {
           /* notification is best-effort */
         }
@@ -175,6 +194,17 @@ Deno.serve(async (req) => {
       if (typeof body.min === "number") patch.reminder_min = [0, 15, 30, 45].includes(body.min as number) ? body.min : 0;
       if (typeof body.enabled === "boolean") patch.reminder_enabled = body.enabled;
       const { error } = await admin.from("profiles").update(patch).eq("id", profile);
+      if (error) throw error;
+      return json({ success: true });
+    }
+
+    if (action === "set-activity") {
+      const profile = body.profile as string | undefined;
+      if (!profile) return json({ error: "no profile" }, 400);
+      const { error } = await admin
+        .from("profiles")
+        .update({ activity_notify: !!body.enabled, updated_at: new Date().toISOString() })
+        .eq("id", profile);
       if (error) throw error;
       return json({ success: true });
     }

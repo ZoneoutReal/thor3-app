@@ -11,6 +11,7 @@ export type Profile = {
   reminder_min: number;
   tz: string;
   sort: number;
+  activity_notify: boolean; // get pinged when a family member finishes a workout
 };
 
 const PASSCODE_KEY = "thor3-passcode";

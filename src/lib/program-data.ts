@@ -451,6 +451,35 @@ export const TYPE_META: Record<WorkoutType, { label: string; color: string; icon
   mixed: { label: "Multi", color: "#BE185D", icon: "⚡" },
 };
 
+// A short natural-language name for a day's workout, with article baked in
+// ("a 3-mile ruck", "APFT", "a strength workout"), for the family-completion
+// notification. Distance is read from the day's text for distance-based types.
+export function workoutLabel(day: DayWorkout): string {
+  const text = day.sessions.flatMap((s) => s.description).join(" ");
+  const dist = text.match(/(\d+(?:\.\d+)?)\s*mi(?:le)?s?\b/i);
+  const miles = dist ? dist[1] : null;
+  switch (day.type) {
+    case "ruck":
+      return miles ? `a ${miles}-mile ruck` : "a ruck";
+    case "run":
+      return miles ? `a ${miles}-mile run` : "a run";
+    case "walk":
+      return miles ? `a ${miles}-mile walk` : "a walk";
+    case "bike":
+      return miles ? `a ${miles}-mile ride` : "a ride";
+    case "strength":
+      return "a strength workout";
+    case "nic":
+      return "a conditioning session";
+    case "apft":
+      return "APFT";
+    case "mixed":
+      return "a workout";
+    default:
+      return "a workout";
+  }
+}
+
 // --- Strength Sheet (the "attached sheet" referenced on strength days) ---
 
 export interface StrengthRow {
