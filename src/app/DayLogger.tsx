@@ -5,6 +5,7 @@ import { parseDay, fmtClock, fmtDuration, pacePerMile, type DayStep } from "@/li
 import { type LoggedValue } from "@/lib/sync";
 import { writeLog, writeSetDone, mergeServerLogs, mergeServerSets } from "@/lib/workout-log";
 import { getStrengthBlockForWeek, type DayWorkout } from "@/lib/program-data";
+import { beep, unlockAudio } from "@/lib/beep";
 import { WorkoutMode } from "./WorkoutMode";
 
 function vibrate(ms: number) {
@@ -112,6 +113,7 @@ function CountdownTimer({ seconds, done, onExpire }: { seconds: number; done: bo
     if (!running) return;
     if (remaining <= 0) {
       setRunning(false);
+      beep();
       vibrate(400);
       expireRef.current();
       return;
@@ -131,7 +133,10 @@ function CountdownTimer({ seconds, done, onExpire }: { seconds: number; done: bo
           <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: "var(--accent)" }} />
         </div>
         <button
-          onClick={() => setRunning((r) => !r)}
+          onClick={() => {
+            unlockAudio();
+            setRunning((r) => !r);
+          }}
           className="rounded-md px-2.5 py-1 text-xs font-semibold"
           style={{ backgroundColor: "var(--accent)" + "22", color: "var(--accent)" }}
         >
@@ -352,7 +357,10 @@ export function DayLogger({
     setLog(startKey, new Date().toISOString(), "session-start", week);
   };
   const beginCountdown = () => {
-    if (preCount == null) setPreCount(3);
+    if (preCount == null) {
+      unlockAudio();
+      setPreCount(3);
+    }
   };
   useEffect(() => {
     if (preCount == null) return;
@@ -361,6 +369,7 @@ export function DayLogger({
       return () => clearTimeout(id);
     }
     // preCount === 0 -> GO: stamp the start, then clear after a brief flash.
+    beep();
     startSession();
     const id = setTimeout(() => setPreCount(null), 650);
     return () => clearTimeout(id);
