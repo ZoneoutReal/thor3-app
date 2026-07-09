@@ -6,6 +6,7 @@ import {
   programs,
   DAY_LABELS,
   TYPE_META,
+  workoutLabel,
   type DayWorkout,
   type WorkoutType,
 } from "@/lib/program-data";
@@ -16,7 +17,7 @@ import { DayLogger } from "./DayLogger";
 import { Gate } from "./Gate";
 import { Together } from "./Together";
 import { Metrics } from "./Metrics";
-import { pullAll, queuePush, setReminder, setActiveProgram, onSyncStatus, type Snapshot, type SyncStatus } from "@/lib/sync";
+import { pullAll, queuePush, setReminder, setActivityNotify, setActiveProgram, onSyncStatus, type Snapshot, type SyncStatus } from "@/lib/sync";
 import { getPasscode, getProfileId, type Profile } from "@/lib/profiles";
 import { getProgramPref, setProgramPref, getStartDate, setStartDate, currentPosition } from "@/lib/program-prefs";
 
@@ -300,6 +301,58 @@ function ReminderTime({
   );
 }
 
+function ActivityNotifyToggle({
+  myProfile,
+  onSaved,
+}: {
+  myProfile?: Profile;
+  onSaved: () => void;
+}) {
+  const [on, setOn] = useState(myProfile?.activity_notify ?? true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (myProfile) setOn(myProfile.activity_notify);
+  }, [myProfile?.id, myProfile?.activity_notify]);
+
+  const save = useCallback(
+    async (next: boolean) => {
+      const pid = getProfileId();
+      if (!pid) return;
+      setOn(next);
+      setSaving(true);
+      await setActivityNotify(pid, next);
+      setSaving(false);
+      onSaved();
+    },
+    [onSaved]
+  );
+
+  return (
+    <div className="mt-5 border-t border-[var(--border)] pt-4">
+      <div className="flex items-center justify-between">
+        <div className="pr-3">
+          <p className="text-sm font-semibold">Family activity</p>
+          <p className="text-xs text-[var(--muted)]">
+            Get a nudge when someone finishes a workout{saving ? " · saving..." : ""}
+          </p>
+        </div>
+        <button
+          onClick={() => save(!on)}
+          className="relative h-6 w-11 shrink-0 rounded-full transition-colors"
+          style={{ backgroundColor: on ? "var(--accent)" : "var(--border)" }}
+          aria-label="Toggle family activity notifications"
+        >
+          <span
+            className="absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all"
+            style={{ left: on ? "22px" : "2px" }}
+          />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function NotificationSettings({
   myProfile,
   programId,
@@ -423,6 +476,7 @@ function NotificationSettings({
         )}
 
         <ReminderTime myProfile={myProfile} onReminderSaved={onReminderSaved} />
+        <ActivityNotifyToggle myProfile={myProfile} onSaved={onReminderSaved} />
       </div>
     </div>
   );
@@ -484,15 +538,17 @@ function useSyncedProgress(programId: string, profileId: string | null, unlocked
   }, []);
 
   const toggle = useCallback(
-    (week: number, day: number) => {
+    (week: number, day: number, label?: string) => {
       setDone((prev) => {
         const id = `${week}-${day}`;
         const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
+        const wasDone = next.has(id);
+        if (wasDone) next.delete(id);
         else next.add(id);
         const arr = [...next];
         localStorage.setItem(key, JSON.stringify(arr));
-        queuePush({ days: arr });
+        // Only tag the "just finished X" hint when newly completing (not undo).
+        queuePush({ days: arr, ...(!wasDone && label ? { done: { id, label } } : {}) });
         return next;
       });
     },
@@ -1022,7 +1078,7 @@ export default function Home() {
                       isDone={isDone(week.week, day.day)}
                       isToday={position?.todayId === `${week.week}-${day.day}`}
                       durationSec={durV ? parseInt(durV, 10) : undefined}
-                      onToggle={() => toggle(week.week, day.day)}
+                      onToggle={() => toggle(week.week, day.day, workoutLabel(day))}
                       onOpenStrength={setStrengthWeek}
                       onOpenLogger={(w, d) => setLoggerDay({ week: w, day: d })}
                     />
@@ -1109,7 +1165,7 @@ export default function Home() {
                 setLoggerDay(null);
               }}
               onFinish={() => {
-                if (!isDone(loggerDay.week, loggerDay.day)) toggle(loggerDay.week, loggerDay.day);
+                if (!isDone(loggerDay.week, loggerDay.day)) toggle(loggerDay.week, loggerDay.day, workoutLabel(d));
                 setLoggerDay(null);
               }}
               onClose={() => setLoggerDay(null)}

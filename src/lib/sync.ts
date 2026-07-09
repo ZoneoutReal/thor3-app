@@ -56,6 +56,13 @@ export async function setReminder(profile: string, r: { hour?: number; min?: num
   return call({ action: "set-reminder", passcode, profile, ...r });
 }
 
+// Toggle whether this profile gets pinged when a family member finishes a workout.
+export async function setActivityNotify(profile: string, enabled: boolean) {
+  const passcode = getPasscode();
+  if (!passcode) return { error: "locked" };
+  return call({ action: "set-activity", passcode, profile, enabled });
+}
+
 // --- Durable, program-aware push queue --------------------------------------
 //
 // Progress rows are keyed by (profile, program), so every push must carry the
@@ -67,7 +74,14 @@ export function setActiveProgram(id: string) {
   activeProgram = id || DEFAULT_PROGRAM;
 }
 
-export type Patch = { days?: string[]; sets?: string[]; logs?: Record<string, LoggedValue> };
+// `done` is a transient hint (not stored on the row): the day just marked
+// complete + a human label, so the server can say "finished a 3-mile ruck".
+export type Patch = {
+  days?: string[];
+  sets?: string[];
+  logs?: Record<string, LoggedValue>;
+  done?: { id: string; label: string };
+};
 type Outbox = { profile: string; program: string; patch: Patch };
 
 const OUTBOX_KEY = "thor3-outbox";
