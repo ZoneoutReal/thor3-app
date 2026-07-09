@@ -13,6 +13,7 @@ import type { LoggedValue } from "@/lib/sync";
 import { getProfileId } from "@/lib/profiles";
 import { getRestPref } from "@/lib/program-prefs";
 import { beep, unlockAudio } from "@/lib/beep";
+import { getExerciseMedia } from "@/lib/exercise-media";
 import {
   writeLog,
   writeSetDone,
@@ -270,6 +271,9 @@ function ExerciseCard({
   // back to the program's prescribed rest, which only some rows carry.
   const rest = restPrefSec > 0 ? restPrefSec : restSeconds(row.rest);
 
+  const media = getExerciseMedia(row.name);
+  const [showMedia, setShowMedia] = useState(false);
+
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-3">
       <div className="mb-2 flex items-center gap-2">
@@ -277,6 +281,23 @@ function ExerciseCard({
           <span className="text-[10px] font-bold text-[var(--muted)]">{row.group}</span>
         )}
         <span className="flex-1 text-sm font-bold text-[var(--foreground)]">{row.name}</span>
+        {media && (
+          <button
+            onClick={() => setShowMedia((v) => !v)}
+            aria-label={showMedia ? "Hide exercise reference" : "Show exercise reference"}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors"
+            style={{
+              backgroundColor: showMedia ? "var(--accent)" + "22" : "var(--card)",
+              color: showMedia ? "var(--accent)" : "var(--muted)",
+            }}
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+              <circle cx="8.5" cy="10" r="1.5" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 16l-5-5-6 6" />
+            </svg>
+          </button>
+        )}
         <span
           className="text-xs font-semibold"
           style={{ color: doneCount === sets.length ? "var(--success)" : "var(--muted)" }}
@@ -284,6 +305,26 @@ function ExerciseCard({
           {doneCount}/{sets.length}
         </span>
       </div>
+
+      {media && showMedia && (
+        <div className="mb-2 rounded-lg border border-[var(--border)] bg-[var(--card)] p-2">
+          <div className="flex gap-2">
+            {media.images.map((src, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={i}
+                src={src}
+                loading="lazy"
+                alt={`${row.name} ${i === 0 ? "start" : "finish"} position`}
+                className="w-1/2 rounded-md border border-[var(--border)]"
+              />
+            ))}
+          </div>
+          <p className="mt-1 text-[10px] text-[var(--muted)]">
+            Reference: {media.source} &middot; public domain
+          </p>
+        </div>
+      )}
       <div className="flex flex-col gap-1.5">
         {sets.map((s, i) => {
           const id = idFor(i);
