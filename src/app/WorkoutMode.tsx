@@ -179,7 +179,9 @@ function RepSetRow({
   index,
   target,
   reps,
+  repsGhost,
   weight,
+  weightGhost,
   isDone,
   onReps,
   onWeight,
@@ -188,7 +190,9 @@ function RepSetRow({
   index: number;
   target: string; // the prescription label, e.g. "20+", "12 ea", "MAX"
   reps: string; // current value shown in the reps box (defaults to the target)
+  repsGhost: boolean; // true when reps is a not-yet-logged suggestion (show gray)
   weight: string;
+  weightGhost: boolean; // true when weight is a carried-over suggestion (show gray)
   isDone: boolean;
   onReps: (v: string) => void;
   onWeight: (v: string) => void;
@@ -208,7 +212,8 @@ function RepSetRow({
         inputMode="numeric"
         placeholder={defaultReps(target) || target}
         aria-label={`Set ${index} reps`}
-        className="w-12 rounded-md border border-[var(--border)] bg-[var(--background)] px-1.5 py-1.5 text-center text-sm font-semibold text-[var(--foreground)] outline-none focus:border-[var(--accent)]"
+        className="w-12 rounded-md border border-[var(--border)] bg-[var(--background)] px-1.5 py-1.5 text-center text-sm font-semibold outline-none focus:border-[var(--accent)]"
+        style={{ color: repsGhost ? "var(--muted)" : "var(--foreground)" }}
       />
       <span className="shrink-0 text-[11px] text-[var(--muted)]">{perSide ? "reps ea" : "reps"}</span>
 
@@ -219,7 +224,8 @@ function RepSetRow({
         inputMode="decimal"
         placeholder="–"
         aria-label={`Set ${index} weight`}
-        className="w-14 rounded-md border border-[var(--border)] bg-[var(--background)] px-1.5 py-1.5 text-center text-sm text-[var(--foreground)] outline-none focus:border-[var(--accent)]"
+        className="w-14 rounded-md border border-[var(--border)] bg-[var(--background)] px-1.5 py-1.5 text-center text-sm outline-none focus:border-[var(--accent)]"
+        style={{ color: weightGhost ? "var(--muted)" : "var(--foreground)" }}
       />
       <span className="shrink-0 text-[11px] text-[var(--muted)]">lb</span>
 
@@ -352,20 +358,34 @@ function ExerciseCard({
           }
           const wtKey = `${id}|w`;
           const def = defaultReps(s.label);
+          const loggedReps = getVal(id);
+          const loggedWt = getVal(wtKey);
+          // Carry the weight forward from the nearest earlier set that has one.
+          let carryWt = "";
+          for (let j = i - 1; j >= 0; j--) {
+            const w = getVal(`${idFor(j)}|w`);
+            if (w) {
+              carryWt = w;
+              break;
+            }
+          }
           return (
             <RepSetRow
               key={i}
               index={i + 1}
               target={s.label}
-              reps={getVal(id) || def}
-              weight={getVal(wtKey)}
+              reps={loggedReps || def}
+              repsGhost={!loggedReps && !!def}
+              weight={loggedWt || carryWt}
+              weightGhost={!loggedWt && !!carryWt}
               isDone={isDone(id)}
               onReps={(v) => setLog(id, v, week)}
               onWeight={(v) => setLog(wtKey, v, week)}
               onToggle={() => {
                 const willComplete = !isDone(id);
-                // Persist the pre-filled target reps if the box was left untouched.
-                if (willComplete && !getVal(id) && def) setLog(id, def, week);
+                // Cement the suggested reps + carried-over weight if left untouched.
+                if (willComplete && !loggedReps && def) setLog(id, def, week);
+                if (willComplete && !loggedWt && carryWt) setLog(wtKey, carryWt, week);
                 toggle(id);
                 if (willComplete) onStartRest(rest);
               }}
