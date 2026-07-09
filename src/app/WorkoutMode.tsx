@@ -12,6 +12,7 @@ import {
 import type { LoggedValue } from "@/lib/sync";
 import { getProfileId } from "@/lib/profiles";
 import { getRestPref } from "@/lib/program-prefs";
+import { beep, unlockAudio } from "@/lib/beep";
 import {
   writeLog,
   writeSetDone,
@@ -104,6 +105,7 @@ function IntervalTimer({
   useEffect(() => {
     if (running && remaining === 0) {
       setRunning(false);
+      beep();
       vibrate(200);
       onCompleteRef.current();
     }
@@ -137,7 +139,10 @@ function IntervalTimer({
         {mmss(remaining)}
       </span>
       <button
-        onClick={() => setRunning((r) => !r)}
+        onClick={() => {
+          unlockAudio();
+          setRunning((r) => !r);
+        }}
         className="rounded-md px-3 py-1.5 text-xs font-bold transition-colors"
         style={{ backgroundColor: "var(--accent)", color: "#000" }}
       >
@@ -449,13 +454,17 @@ export function WorkoutMode({
 
   useEffect(() => {
     if (rest && rest.remaining === 0) {
+      beep();
       vibrate(300);
       setRest(null);
     }
   }, [rest]);
 
   const startRest = useCallback((seconds?: number) => {
-    if (seconds && seconds > 0) setRest({ total: seconds, remaining: seconds });
+    if (seconds && seconds > 0) {
+      unlockAudio(); // arm the beep on the completing tap (iOS gesture requirement)
+      setRest({ total: seconds, remaining: seconds });
+    }
   }, []);
 
   const setIdsForDay = useCallback(
