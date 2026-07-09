@@ -1,0 +1,84 @@
+// Durable, clobber-safe writes for the synced logs map and set-completion list.
+//
+// The day logger (DayLogger) and the strength view (WorkoutMode) can be mounted
+// at the same time — WorkoutMode is embedded inside the logger on strength days —
+// and both write to the SAME localStorage-backed `logs` map and `sets` list,
+// which the server replaces wholesale on each push. If each component wrote its
+// own in-memory snapshot, the last writer would drop the other's keys. So every
+// durable write here is a read-modify-write against localStorage (synchronous,
+// single-threaded, always current), which keeps disjoint key namespaces
+// (cardio steps / rpe / notes vs. strength reps / weights) from wiping each other.
+
+import { getProfileId } from "./profiles";
+import { queuePush, type LoggedValue } from "./sync";
+
+const logsKey = (pid: string | null, program: string) =>
+  pid ? `thor3-logs-${pid}-${program}` : `thor3-logs-${program}`;
+const setsKey = (pid: string | null, program: string) =>
+  pid ? `thor3-sets-${pid}-${program}` : `thor3-sets-${program}`;
+
+export function readLogs(program: string): Record<string, LoggedValue> {
+  const pid = getProfileId();
+  try {
+    return JSON.parse(localStorage.getItem(logsKey(pid, program)) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+export function readSets(program: string): string[] {
+  const pid = getProfileId();
+  try {
+    const raw = localStorage.getItem(setsKey(pid, program)) ?? localStorage.getItem(`thor3-sets-${program}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+// Set (or clear, when value is blank) one log entry; returns the full updated map.
+export function writeLog(
+  program: string,
+  key: string,
+  value: string,
+  opts: { metric?: string; week?: number } = {}
+): Record<string, LoggedValue> {
+  const pid = getProfileId();
+  const map = readLogs(program);
+  if (value.trim() === "") delete map[key];
+  else map[key] = { v: value.trim(), m: opts.metric, w: opts.week };
+  localStorage.setItem(logsKey(pid, program), JSON.stringify(map));
+  queuePush({ logs: map });
+  return map;
+}
+
+// Flip one set's completion; returns the full updated array.
+export function writeSetDone(program: string, id: string, done: boolean): string[] {
+  const pid = getProfileId();
+  const cur = new Set(readSets(program));
+  if (done) cur.add(id);
+  else cur.delete(id);
+  const arr = [...cur];
+  localStorage.setItem(setsKey(pid, program), JSON.stringify(arr));
+  queuePush({ sets: arr });
+  return arr;
+}
+
+// Pull server values down into local (local wins) and persist. Mount-time
+// hydration only — no queuePush, since this originates no user change.
+export function mergeServerLogs(
+  program: string,
+  serverLogs: Record<string, LoggedValue>
+): Record<string, LoggedValue> {
+  const pid = getProfileId();
+  const merged = { ...(serverLogs ?? {}), ...readLogs(program) };
+  localStorage.setItem(logsKey(pid, program), JSON.stringify(merged));
+  return merged;
+}
+
+export function mergeServerSets(program: string, serverSets: string[]): string[] {
+  const pid = getProfileId();
+  const merged = [...new Set([...(serverSets ?? []), ...readSets(program)])];
+  localStorage.setItem(setsKey(pid, program), JSON.stringify(merged));
+  return merged;
+}
