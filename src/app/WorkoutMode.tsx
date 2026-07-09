@@ -9,8 +9,20 @@ import {
   type StrengthRow,
   type ParsedSet,
 } from "@/lib/program-data";
-import { queuePush } from "@/lib/sync";
-import { getProfileId } from "@/lib/profiles";
+import type { LoggedValue } from "@/lib/sync";
+import {
+  writeLog,
+  writeSetDone,
+  mergeServerLogs,
+  mergeServerSets,
+} from "@/lib/workout-log";
+
+// The prescribed rep count to pre-fill a set's box, or "" when there's no number
+// to seed (e.g. "MAX"). Strips the "+" (a floor, not a cap) and per-side "ea".
+function defaultReps(label: string): string {
+  const t = label.trim().replace(/\bea\b/gi, "").replace(/\+/g, "").trim();
+  return /^\d+$/.test(t) ? t : "";
+}
 
 function mmss(s: number) {
   return `${Math.floor(s / 60)}:${String(Math.max(0, s % 60)).padStart(2, "0")}`;
@@ -30,59 +42,37 @@ function vibrate(ms: number) {
   }
 }
 
-// --- Per-set completion state, persisted per program ---
+// --- Per-set completion + logged reps/weights, persisted & synced per program ---
 
-function useSetProgress(programId: string) {
-  const pid = getProfileId();
-  const key = pid ? `thor3-sets-${pid}-${programId}` : `thor3-sets-${programId}`;
-  const legacyKey = `thor3-sets-${programId}`;
+function useSetProgress(programId: string, serverSets?: string[], serverLogs?: Record<string, LoggedValue>) {
   const [done, setDone] = useState<Set<string>>(new Set());
+  const [logs, setLogs] = useState<Record<string, LoggedValue>>({});
 
+  // Hydrate: pull server completion + logged values down into local (local wins).
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(key) ?? localStorage.getItem(legacyKey);
-      if (raw) setDone(new Set(JSON.parse(raw)));
-    } catch {
-      /* ignore */
-    }
-  }, [key, legacyKey]);
+    setDone(new Set(mergeServerSets(programId, serverSets ?? [])));
+    setLogs(mergeServerLogs(programId, serverLogs ?? {}));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [programId]);
 
-  const write = useCallback(
-    (next: Set<string>) => {
-      const arr = [...next];
-      localStorage.setItem(key, JSON.stringify(arr));
-      // Share set-level logging to the server (partial update: only sets).
-      queuePush({ sets: arr });
-      return next;
-    },
-    [key]
-  );
-
+  // Every durable write is a read-modify-write on localStorage (see workout-log.ts)
+  // so the co-mounted day logger and this view never clobber each other's keys.
   const set = useCallback(
-    (id: string, val: boolean) =>
-      setDone((prev) => {
-        if (prev.has(id) === val) return prev;
-        const next = new Set(prev);
-        if (val) next.add(id);
-        else next.delete(id);
-        return write(next);
-      }),
-    [write]
+    (id: string, val: boolean) => setDone(new Set(writeSetDone(programId, id, val))),
+    [programId]
   );
-
   const toggle = useCallback(
-    (id: string) =>
-      setDone((prev) => {
-        const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return write(next);
-      }),
-    [write]
+    (id: string) => setDone((prev) => new Set(writeSetDone(programId, id, !prev.has(id)))),
+    [programId]
+  );
+  const setLog = useCallback(
+    (key: string, value: string, week?: number) => setLogs(writeLog(programId, key, value, { week })),
+    [programId]
   );
 
   const isDone = useCallback((id: string) => done.has(id), [done]);
-  return { isDone, toggle, set };
+  const getVal = useCallback((key: string) => logs[key]?.v ?? "", [logs]);
+  return { isDone, toggle, set, setLog, getVal };
 }
 
 // --- Timed set: Go / Pause / Reset countdown that checks itself off at zero ---
@@ -175,43 +165,69 @@ function IntervalTimer({
   );
 }
 
-// --- Rep set: a single checkable row ---
+// --- Rep set: editable reps + weight, then a done check ---
 
 function RepSetRow({
   index,
   target,
+  reps,
+  weight,
   isDone,
+  onReps,
+  onWeight,
   onToggle,
 }: {
   index: number;
-  target: string;
+  target: string; // the prescription label, e.g. "20+", "12 ea", "MAX"
+  reps: string; // current value shown in the reps box (defaults to the target)
+  weight: string;
   isDone: boolean;
+  onReps: (v: string) => void;
+  onWeight: (v: string) => void;
   onToggle: () => void;
 }) {
+  const perSide = /\bea\b/i.test(target); // "12 ea" -> reps are per side
   return (
-    <button
-      onClick={onToggle}
-      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors"
+    <div
+      className="flex items-center gap-2 rounded-lg px-3 py-2 transition-colors"
       style={{ backgroundColor: isDone ? "var(--success)" + "12" : "var(--card)" }}
     >
-      <span className="w-12 shrink-0 text-xs font-medium text-[var(--muted)]">Set {index}</span>
-      <span
-        className="flex-1 text-sm font-semibold"
-        style={{ color: isDone ? "var(--muted)" : "var(--foreground)" }}
-      >
-        {target}
-      </span>
-      <span
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-sm transition-colors"
+      <span className="w-10 shrink-0 text-xs font-medium text-[var(--muted)]">Set {index}</span>
+
+      <input
+        value={reps}
+        onChange={(e) => onReps(e.target.value)}
+        inputMode="numeric"
+        placeholder={defaultReps(target) || target}
+        aria-label={`Set ${index} reps`}
+        className="w-12 rounded-md border border-[var(--border)] bg-[var(--background)] px-1.5 py-1.5 text-center text-sm font-semibold text-[var(--foreground)] outline-none focus:border-[var(--accent)]"
+      />
+      <span className="shrink-0 text-[11px] text-[var(--muted)]">{perSide ? "reps ea" : "reps"}</span>
+
+      <span className="shrink-0 text-[var(--muted)]">&times;</span>
+      <input
+        value={weight}
+        onChange={(e) => onWeight(e.target.value)}
+        inputMode="decimal"
+        placeholder="–"
+        aria-label={`Set ${index} weight`}
+        className="w-14 rounded-md border border-[var(--border)] bg-[var(--background)] px-1.5 py-1.5 text-center text-sm text-[var(--foreground)] outline-none focus:border-[var(--accent)]"
+      />
+      <span className="shrink-0 text-[11px] text-[var(--muted)]">lb</span>
+
+      <button
+        onClick={onToggle}
+        aria-label={isDone ? "Mark set not done" : "Mark set done"}
+        className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-sm transition-colors"
         style={{
           borderColor: isDone ? "var(--success)" : "var(--border)",
           backgroundColor: isDone ? "var(--success)" : "transparent",
-          color: isDone ? "#000" : "transparent",
+          color: isDone ? "#000" : "var(--muted)",
         }}
       >
         &#10003;
-      </span>
-    </button>
+      </button>
+    </div>
   );
 }
 
@@ -220,18 +236,24 @@ function RepSetRow({
 function ExerciseCard({
   row,
   sets,
+  week,
   idFor,
   isDone,
   toggle,
   setSet,
+  getVal,
+  setLog,
   onStartRest,
 }: {
   row: StrengthRow;
   sets: ParsedSet[];
+  week: number;
   idFor: (setIndex: number) => string;
   isDone: (id: string) => boolean;
   toggle: (id: string) => void;
   setSet: (id: string, val: boolean) => void;
+  getVal: (key: string) => string;
+  setLog: (key: string, value: string, week?: number) => void;
   onStartRest: (seconds?: number) => void;
 }) {
   const doneCount = sets.filter((_, i) => isDone(idFor(i))).length;
@@ -276,14 +298,22 @@ function ExerciseCard({
               </div>
             );
           }
+          const wtKey = `${id}|w`;
+          const def = defaultReps(s.label);
           return (
             <RepSetRow
               key={i}
               index={i + 1}
               target={s.label}
+              reps={getVal(id) || def}
+              weight={getVal(wtKey)}
               isDone={isDone(id)}
+              onReps={(v) => setLog(id, v, week)}
+              onWeight={(v) => setLog(wtKey, v, week)}
               onToggle={() => {
                 const willComplete = !isDone(id);
+                // Persist the pre-filled target reps if the box was left untouched.
+                if (willComplete && !getVal(id) && def) setLog(id, def, week);
                 toggle(id);
                 if (willComplete) onStartRest(rest);
               }}
@@ -358,6 +388,8 @@ export function WorkoutMode({
   lockWeek,
   singleDayIndex,
   embedded,
+  serverLogs,
+  serverSets,
 }: {
   block: StrengthBlock;
   programId: string;
@@ -365,6 +397,8 @@ export function WorkoutMode({
   lockWeek?: number; // force this logging week and hide the week picker
   singleDayIndex?: number; // show only this day (with a compact Day toggle)
   embedded?: boolean; // trim the standalone bottom padding when inlined
+  serverLogs?: Record<string, LoggedValue>; // synced reps/weights to hydrate
+  serverSets?: string[]; // synced set completions to hydrate
 }) {
   const wantWeek =
     lockWeek != null && block.weeks.includes(lockWeek)
@@ -390,7 +424,7 @@ export function WorkoutMode({
 
   const daysToShow = singleDayIndex != null ? block.days.filter((_, i) => i === selectedDay) : block.days;
   const weekIndex = Math.max(0, block.weeks.indexOf(targetWeek));
-  const { isDone, toggle, set: setSet } = useSetProgress(programId);
+  const { isDone, toggle, set: setSet, setLog, getVal } = useSetProgress(programId, serverSets, serverLogs);
 
   const [rest, setRest] = useState<{ total: number; remaining: number } | null>(null);
 
@@ -547,10 +581,13 @@ export function WorkoutMode({
                         key={row.name}
                         row={row}
                         sets={sets}
+                        week={targetWeek}
                         idFor={(si) => `${targetWeek}|${day.label}|${row.name}|${si}`}
                         isDone={isDone}
                         toggle={toggle}
                         setSet={setSet}
+                        getVal={getVal}
+                        setLog={setLog}
                         onStartRest={startRest}
                       />
                     );

@@ -9,6 +9,7 @@ import {
   type StrengthBlock,
 } from "@/lib/program-data";
 import { WorkoutMode } from "./WorkoutMode";
+import type { LoggedValue } from "@/lib/sync";
 
 function DayHeader({ day }: { day: StrengthDay }) {
   return (
@@ -284,10 +285,14 @@ export function StrengthSheet({
   onClose,
   initialWeek,
   programId = "10week",
+  serverLogs,
+  serverSets,
 }: {
   onClose: () => void;
   initialWeek?: number;
   programId?: string;
+  serverLogs?: Record<string, LoggedValue>;
+  serverSets?: string[];
 }) {
   const initialBlock = initialWeek != null ? getStrengthBlockForWeek(initialWeek) : undefined;
   const [activeTitle, setActiveTitle] = useState(
@@ -361,7 +366,13 @@ export function StrengthSheet({
         <div className="mx-auto max-w-lg space-y-5 px-4 py-4">
           <WarmUp />
           {mode === "workout" ? (
-            <WorkoutMode block={block} programId={programId} initialWeek={initialWeek} />
+            <WorkoutMode
+              block={block}
+              programId={programId}
+              initialWeek={initialWeek}
+              serverLogs={serverLogs}
+              serverSets={serverSets}
+            />
           ) : (
             <>
               {block.days.map((day) => (

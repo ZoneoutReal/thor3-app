@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { parseDay, fmtClock, fmtDuration, pacePerMile, type DayStep } from "@/lib/day-steps";
-import { queuePush, type LoggedValue } from "@/lib/sync";
-import { getProfileId } from "@/lib/profiles";
+import { type LoggedValue } from "@/lib/sync";
+import { writeLog, writeSetDone, mergeServerLogs, mergeServerSets } from "@/lib/workout-log";
 import { getStrengthBlockForWeek, type DayWorkout } from "@/lib/program-data";
 import { WorkoutMode } from "./WorkoutMode";
 
@@ -36,57 +36,38 @@ function parseDurationInput(s: string): number | null {
 
 function useWorkoutLog(
   programId: string,
-  profileId: string | null,
   serverLogs: Record<string, LoggedValue>,
   serverSets: string[]
 ) {
-  const logsKey = profileId ? `thor3-logs-${profileId}-${programId}` : `thor3-logs-${programId}`;
-  const setsKey = profileId ? `thor3-sets-${profileId}-${programId}` : `thor3-sets-${programId}`;
   const [logs, setLogs] = useState<Record<string, LoggedValue>>({});
   const [done, setDone] = useState<Set<string>>(new Set());
   // Mirror state in refs so a write's durable side effects (localStorage +
-  // queuePush) run synchronously, not inside a setState updater. Finishing the
-  // workout unmounts this logger in the same React batch, which would discard a
-  // pending updater and lose the final duration.
+  // queuePush, via workout-log helpers) run synchronously, not inside a setState
+  // updater. Finishing the workout unmounts this logger in the same React batch,
+  // which would discard a pending updater and lose the final duration.
   const logsRef = useRef<Record<string, LoggedValue>>({});
   const setsRef = useRef<Set<string>>(new Set());
 
   // Local-first load, then merge the server snapshot in (local wins on conflict).
+  // Writes go through the shared read-modify-write helpers so the strength view,
+  // which can be mounted alongside this logger, never clobbers these keys.
   useEffect(() => {
-    let localLogs: Record<string, LoggedValue> = {};
-    let localSets: string[] = [];
-    try {
-      localLogs = JSON.parse(localStorage.getItem(logsKey) || "{}");
-    } catch {
-      /* ignore */
-    }
-    try {
-      localSets = JSON.parse(localStorage.getItem(setsKey) || localStorage.getItem(`thor3-sets-${programId}`) || "[]");
-    } catch {
-      /* ignore */
-    }
-    const mergedLogs = { ...serverLogs, ...localLogs };
-    const mergedSets = new Set<string>([...serverSets, ...localSets]);
+    const mergedLogs = mergeServerLogs(programId, serverLogs);
+    const mergedSets = new Set<string>(mergeServerSets(programId, serverSets));
     logsRef.current = mergedLogs;
     setsRef.current = mergedSets;
     setLogs(mergedLogs);
     setDone(mergedSets);
-    localStorage.setItem(logsKey, JSON.stringify(mergedLogs));
-    localStorage.setItem(setsKey, JSON.stringify([...mergedSets]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [logsKey, setsKey]);
+  }, [programId]);
 
   const setLog = useCallback(
     (key: string, value: string, metric?: string, week?: number) => {
-      const next = { ...logsRef.current };
-      if (value.trim() === "") delete next[key];
-      else next[key] = { v: value.trim(), m: metric, w: week };
+      const next = writeLog(programId, key, value, { metric, week });
       logsRef.current = next;
-      localStorage.setItem(logsKey, JSON.stringify(next));
-      queuePush({ logs: next });
       setLogs(next);
     },
-    [logsKey]
+    [programId]
   );
 
   const toggleDone = useCallback(
@@ -94,15 +75,11 @@ function useWorkoutLog(
       const prev = setsRef.current;
       const want = val === undefined ? !prev.has(id) : val;
       if (prev.has(id) === want) return;
-      const next = new Set(prev);
-      if (want) next.add(id);
-      else next.delete(id);
+      const next = new Set(writeSetDone(programId, id, want));
       setsRef.current = next;
-      localStorage.setItem(setsKey, JSON.stringify([...next]));
-      queuePush({ sets: [...next] });
       setDone(next);
     },
-    [setsKey]
+    [programId]
   );
 
   // Most recent value for a metric from an earlier week (Fitbod "last time").
@@ -334,9 +311,8 @@ export function DayLogger({
   onFinish: () => void;
   onClose: () => void;
 }) {
-  const profileId = getProfileId();
   const strengthBlock = getStrengthBlockForWeek(week);
-  const { logs, done, setLog, toggleDone, lastValue } = useWorkoutLog(programId, profileId, serverLogs, serverSets);
+  const { logs, done, setLog, toggleDone, lastValue } = useWorkoutLog(programId, serverLogs, serverSets);
   const sessions = parseDay(day);
 
   // Per-day subjective log, stored alongside step values in the same synced map.
@@ -525,6 +501,8 @@ export function DayLogger({
                           lockWeek={week}
                           singleDayIndex={strengthDayIndex}
                           embedded
+                          serverLogs={serverLogs}
+                          serverSets={serverSets}
                         />
                       </div>
                     );

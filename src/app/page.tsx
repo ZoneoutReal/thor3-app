@@ -1178,6 +1178,8 @@ export default function Home() {
         <StrengthSheet
           initialWeek={strengthWeek}
           programId={selectedProgram}
+          serverLogs={serverLogs}
+          serverSets={serverSets}
           onClose={() => setStrengthWeek(null)}
         />
       )}
