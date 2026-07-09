@@ -19,7 +19,7 @@ import { Together } from "./Together";
 import { Metrics } from "./Metrics";
 import { pullAll, queuePush, setReminder, setActivityNotify, setActiveProgram, onSyncStatus, type Snapshot, type SyncStatus } from "@/lib/sync";
 import { getPasscode, getProfileId, type Profile } from "@/lib/profiles";
-import { getProgramPref, setProgramPref, getStartDate, setStartDate, currentPosition } from "@/lib/program-prefs";
+import { getProgramPref, setProgramPref, getStartDate, setStartDate, getRestPref, setRestPref, currentPosition } from "@/lib/program-prefs";
 
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
@@ -353,20 +353,34 @@ function ActivityNotifyToggle({
   );
 }
 
+const REST_PRESETS: { label: string; sec: number }[] = [
+  { label: "Program", sec: 0 },
+  { label: "0:30", sec: 30 },
+  { label: "0:45", sec: 45 },
+  { label: "1:00", sec: 60 },
+  { label: "1:30", sec: 90 },
+  { label: "2:00", sec: 120 },
+  { label: "3:00", sec: 180 },
+];
+
 function NotificationSettings({
   myProfile,
   programId,
   startDate,
+  restPref,
   onProgramChange,
   onStartDateChange,
+  onRestPrefChange,
   onReminderSaved,
   onClose,
 }: {
   myProfile?: Profile;
   programId: string;
   startDate: string | null;
+  restPref: number;
   onProgramChange: (id: string) => void;
   onStartDateChange: (iso: string) => void;
+  onRestPrefChange: (sec: number) => void;
   onReminderSaved: () => void;
   onClose: () => void;
 }) {
@@ -420,6 +434,30 @@ function NotificationSettings({
               onChange={(e) => onStartDateChange(e.target.value)}
               className="mt-2 w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--foreground)] outline-none focus:border-[var(--accent)]"
             />
+          </div>
+          <div>
+            <p className="text-sm font-semibold">Rest timer</p>
+            <p className="mt-0.5 text-xs text-[var(--muted)]">
+              Your break after each set. &ldquo;Program&rdquo; uses the sheet&apos;s prescribed rests.
+            </p>
+            <div className="hide-scrollbar mt-2 flex gap-1.5 overflow-x-auto">
+              {REST_PRESETS.map((r) => {
+                const on = restPref === r.sec;
+                return (
+                  <button
+                    key={r.sec}
+                    onClick={() => onRestPrefChange(r.sec)}
+                    className="shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition-colors"
+                    style={{
+                      backgroundColor: on ? "var(--accent)" : "var(--card)",
+                      color: on ? "#000" : "var(--muted)",
+                    }}
+                  >
+                    {r.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -842,6 +880,7 @@ export default function Home() {
   // Program selection + start-date anchor (per profile, stored locally).
   const [selectedProgram, setSelectedProgram] = useState<string>("10week");
   const [startDate, setStartDateState] = useState<string | null>(null);
+  const [restPref, setRestPrefState] = useState(0);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
 
   const program = getProgram(selectedProgram) ?? getProgram("10week")!;
@@ -873,6 +912,7 @@ export default function Home() {
     setUnlocked(!!(getPasscode() && pid));
     setSelectedProgram(getProgramPref(pid));
     setStartDateState(getStartDate(pid));
+    setRestPrefState(getRestPref(pid));
   }, []);
 
   // Keep the background push queue routed to the program on screen.
@@ -901,6 +941,7 @@ export default function Home() {
     setMyProfileId(pid);
     setSelectedProgram(getProgramPref(pid));
     setStartDateState(getStartDate(pid));
+    setRestPrefState(getRestPref(pid));
     setUnlocked(true);
     setShowGate(false);
   }, []);
@@ -915,6 +956,12 @@ export default function Home() {
     const pid = getProfileId();
     if (pid) setStartDate(pid, iso);
     setStartDateState(iso || null);
+  }, []);
+
+  const changeRestPref = useCallback((sec: number) => {
+    const pid = getProfileId();
+    if (pid) setRestPref(pid, sec);
+    setRestPrefState(sec);
   }, []);
 
   // First run (or a wiped passcode): show the gate full-screen.
@@ -1120,8 +1167,10 @@ export default function Home() {
           myProfile={myProfile}
           programId={selectedProgram}
           startDate={startDate}
+          restPref={restPref}
           onProgramChange={changeProgram}
           onStartDateChange={changeStartDate}
+          onRestPrefChange={changeRestPref}
           onReminderSaved={refresh}
           onClose={() => setShowSettings(false)}
         />

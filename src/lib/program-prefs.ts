@@ -12,6 +12,7 @@ import type { Program } from "./program-data";
 
 const PROGRAM_KEY = "thor3-program"; // -> `thor3-program-<profileId>`
 const START_KEY = "thor3-start"; //    -> `thor3-start-<profileId>` (YYYY-MM-DD)
+const REST_KEY = "thor3-rest"; //      -> `thor3-rest-<profileId>` (seconds; 0 = program default)
 
 export const DEFAULT_PROGRAM = "10week";
 
@@ -26,6 +27,21 @@ export function getProgramPref(profileId: string | null): string {
 
 export function setProgramPref(profileId: string, programId: string) {
   ls()?.setItem(`${PROGRAM_KEY}-${profileId}`, programId);
+}
+
+// Preferred rest-timer length between sets, in seconds. 0 means "use the
+// program's prescribed rests" (the default). A non-zero value is the person's
+// own fixed break, applied after every set they complete.
+export function getRestPref(profileId: string | null): number {
+  if (!profileId) return 0;
+  const raw = ls()?.getItem(`${REST_KEY}-${profileId}`);
+  const n = raw ? parseInt(raw, 10) : 0;
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+export function setRestPref(profileId: string, seconds: number) {
+  if (seconds > 0) ls()?.setItem(`${REST_KEY}-${profileId}`, String(seconds));
+  else ls()?.removeItem(`${REST_KEY}-${profileId}`);
 }
 
 // The calendar day (local) the person began week 1. Empty string clears it.

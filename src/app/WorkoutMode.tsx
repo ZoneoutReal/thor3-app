@@ -10,6 +10,8 @@ import {
   type ParsedSet,
 } from "@/lib/program-data";
 import type { LoggedValue } from "@/lib/sync";
+import { getProfileId } from "@/lib/profiles";
+import { getRestPref } from "@/lib/program-prefs";
 import {
   writeLog,
   writeSetDone,
@@ -237,6 +239,7 @@ function ExerciseCard({
   row,
   sets,
   week,
+  restPrefSec,
   idFor,
   isDone,
   toggle,
@@ -248,6 +251,7 @@ function ExerciseCard({
   row: StrengthRow;
   sets: ParsedSet[];
   week: number;
+  restPrefSec: number;
   idFor: (setIndex: number) => string;
   isDone: (id: string) => boolean;
   toggle: (id: string) => void;
@@ -257,7 +261,9 @@ function ExerciseCard({
   onStartRest: (seconds?: number) => void;
 }) {
   const doneCount = sets.filter((_, i) => isDone(idFor(i))).length;
-  const rest = restSeconds(row.rest);
+  // A personal preset (when set) is the break after every set; otherwise fall
+  // back to the program's prescribed rest, which only some rows carry.
+  const rest = restPrefSec > 0 ? restPrefSec : restSeconds(row.rest);
 
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-3">
@@ -426,6 +432,10 @@ export function WorkoutMode({
   const weekIndex = Math.max(0, block.weeks.indexOf(targetWeek));
   const { isDone, toggle, set: setSet, setLog, getVal } = useSetProgress(programId, serverSets, serverLogs);
 
+  // The person's own rest-timer preset (0 = use the program's prescribed rests).
+  const [restPrefSec, setRestPrefSec] = useState(0);
+  useEffect(() => setRestPrefSec(getRestPref(getProfileId())), []);
+
   const [rest, setRest] = useState<{ total: number; remaining: number } | null>(null);
 
   useEffect(() => {
@@ -582,6 +592,7 @@ export function WorkoutMode({
                         row={row}
                         sets={sets}
                         week={targetWeek}
+                        restPrefSec={restPrefSec}
                         idFor={(si) => `${targetWeek}|${day.label}|${row.name}|${si}`}
                         isDone={isDone}
                         toggle={toggle}
