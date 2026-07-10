@@ -31,6 +31,21 @@
           "backgroundColor": "#111113",
           "imageWidth": 120
         }
+      ],
+      [
+        "expo-widgets",
+        {
+          "groupIdentifier": "group.com.thetotemworks.rukr",
+          "enablePushNotifications": false,
+          "widgets": [
+            {
+              "name": "RunTimer",
+              "displayName": "Run Timer",
+              "description": "Live running timer on the Lock Screen and Dynamic Island",
+              "supportedFamilies": ["accessoryCircular", "accessoryRectangular", "accessoryInline"]
+            }
+          ]
+        }
       ]
     ],
     "experiments": {

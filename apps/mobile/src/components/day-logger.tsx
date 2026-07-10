@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fmtClock, fmtDuration, pacePerMile, parseDay, type DayStep } from '@/lib/day-steps';
 import { beep, unlockAudio, vibrate } from '@/lib/feedback';
+import { endRunActivity, startRunActivity } from '@/lib/live-activity';
 import type { DayWorkout } from '@/lib/program-data';
 import type { LoggedValue } from '@/lib/sync';
 import { colors } from '@/lib/theme';
@@ -320,11 +321,24 @@ export function DayLogger({
   // eslint-disable-next-line react-hooks/purity
   const elapsedSec = startedAt ? Math.max(0, Math.floor((Date.now() - Date.parse(startedAt)) / 1000)) : 0;
 
-  const startSession = () => setLog(startKey, new Date().toISOString(), 'session-start', week);
-  const discardSession = () => setLog(startKey, '', 'session-start', week);
+  // Feed the iOS Live Activity from the same wall-clock start timestamp that
+  // drives the in-app timer. The native timer text ticks itself; we only start
+  // it on GO and end it on finish/discard.
+  const activityLabel = `Week ${week} · ${typeLabel}`;
+  const startSession = () => {
+    const iso = new Date().toISOString();
+    setLog(startKey, iso, 'session-start', week);
+    startRunActivity({ startedAt: Date.parse(iso), label: activityLabel });
+  };
+  const discardSession = () => {
+    setLog(startKey, '', 'session-start', week);
+    endRunActivity();
+  };
   const restartSession = () => {
+    const iso = new Date().toISOString();
     setLog(durKey, '', 'session-duration', week);
-    setLog(startKey, new Date().toISOString(), 'session-start', week);
+    setLog(startKey, iso, 'session-start', week);
+    startRunActivity({ startedAt: Date.parse(iso), label: activityLabel });
   };
   const beginCountdown = () => {
     if (preCount == null) {
@@ -362,6 +376,7 @@ export function DayLogger({
       setLog(durKey, String(parsedInput), 'session-duration', week);
     }
     setConfirming(false);
+    endRunActivity();
     onFinish();
   };
 
