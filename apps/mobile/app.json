@@ -43,7 +43,11 @@
               "name": "RunTimer",
               "displayName": "Run Timer",
               "description": "Live running timer on the Lock Screen and Dynamic Island",
-              "supportedFamilies": ["accessoryCircular", "accessoryRectangular", "accessoryInline"]
+              "supportedFamilies": [
+                "accessoryCircular",
+                "accessoryRectangular",
+                "accessoryInline"
+              ]
             }
           ]
         }
@@ -53,7 +57,27 @@
       "typedRoutes": true
     },
     "extra": {
-      "router": {}
+      "router": {},
+      "eas": {
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "ExpoWidgetsTarget",
+                  "bundleIdentifier": "com.thetotemworks.rukr.ExpoWidgetsTarget",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.thetotemworks.rukr"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "projectId": "b7224e08-e2e4-491e-a799-05bf4564ee10"
+      }
     },
     "owner": "totemworksllc"
   }
