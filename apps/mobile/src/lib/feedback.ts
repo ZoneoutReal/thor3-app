@@ -1,15 +1,38 @@
-// Haptic feedback cues for the workout timers. A real audio beep (expo-audio)
-// lands in Phase 3; mid-workout with the phone in a pocket the haptic is what
-// actually registers, so the timers are wired to this now and gain sound later.
-// Web (the verification harness) no-ops gracefully.
+// Audio + haptic feedback cues for the workout timers. A short two-note beep
+// (bundled WAV, via expo-audio) plus a haptic — mid-workout with the phone in a
+// pocket both matter. Web plays the beep too; all calls are best-effort.
 
+import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 
-// The web app needed a user-gesture Web Audio unlock; native has nothing to unlock.
-export function unlockAudio() {}
+let player: AudioPlayer | null = null;
+function getPlayer(): AudioPlayer | null {
+  if (player) return player;
+  try {
+    player = createAudioPlayer(require('../../assets/beep.wav'));
+  } catch {
+    player = null;
+  }
+  return player;
+}
 
-// Timer-finished cue.
+// Warm the audio player on a user gesture (the timer Start tap) so the first
+// beep is instant. Historically the web app needed this to unlock audio.
+export function unlockAudio() {
+  getPlayer();
+}
+
+// Timer-finished cue: beep + a success haptic.
 export function beep() {
+  try {
+    const p = getPlayer();
+    if (p) {
+      p.seekTo(0);
+      p.play();
+    }
+  } catch {
+    /* best-effort */
+  }
   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
 }
 

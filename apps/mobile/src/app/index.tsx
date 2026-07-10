@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DayLogger } from '@/components/day-logger';
 import { Gate } from '@/components/gate';
+import { StrengthSheet } from '@/components/strength-sheet';
 import { useSyncedProgress } from '@/hooks/use-synced-progress';
 import { fmtDuration } from '@/lib/day-steps';
 import {
@@ -36,6 +37,7 @@ export default function Home() {
   const [startDate, setStartDateState] = useState<string | null>(() => getStartDate(getProfileId()));
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const [loggerDay, setLoggerDay] = useState<{ week: number; day: number } | null>(null);
+  const [strengthWeek, setStrengthWeek] = useState<number | null>(null);
 
   const program = getProgram(selectedProgram) ?? getProgram('10week')!;
 
@@ -119,6 +121,9 @@ export default function Home() {
               ]}
             />
           ) : null}
+          <Pressable onPress={() => setStrengthWeek(week.week)} style={styles.iconBtn} hitSlop={6}>
+            <Text style={styles.iconBtnText}>🏋️</Text>
+          </Pressable>
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={styles.count}>
               {count}
@@ -205,6 +210,7 @@ export default function Home() {
                     durationSec={durV ? parseInt(durV, 10) : undefined}
                     onToggle={() => toggle(week.week, day.day, workoutLabel(day))}
                     onOpenLogger={() => setLoggerDay({ week: week.week, day: day.day })}
+                    onOpenStrength={() => setStrengthWeek(week.week)}
                   />
                 );
               })}
@@ -245,12 +251,27 @@ export default function Home() {
           dayComplete={isDone(loggerDay.week, loggerDay.day)}
           serverLogs={serverLogs}
           serverSets={serverSets}
-          onOpenStrength={() => setLoggerDay(null)}
+          onOpenStrength={() => {
+            const wk = loggerDay.week;
+            setLoggerDay(null);
+            setStrengthWeek(wk);
+          }}
           onFinish={() => {
             if (!isDone(loggerDay.week, loggerDay.day)) toggle(loggerDay.week, loggerDay.day, workoutLabel(loggerWorkout));
             setLoggerDay(null);
           }}
           onClose={() => setLoggerDay(null)}
+        />
+      ) : null}
+
+      {/* Strength sheet */}
+      {strengthWeek !== null ? (
+        <StrengthSheet
+          initialWeek={strengthWeek}
+          programId={selectedProgram}
+          serverLogs={serverLogs}
+          serverSets={serverSets}
+          onClose={() => setStrengthWeek(null)}
         />
       ) : null}
     </View>
@@ -291,6 +312,7 @@ function DayCard({
   durationSec,
   onToggle,
   onOpenLogger,
+  onOpenStrength,
 }: {
   workout: DayWorkout;
   isDone: boolean;
@@ -298,6 +320,7 @@ function DayCard({
   durationSec?: number;
   onToggle: () => void;
   onOpenLogger: () => void;
+  onOpenStrength: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const meta = TYPE_META[workout.type];
@@ -345,15 +368,21 @@ function DayCard({
               {session.label ? (
                 <Text style={[styles.sessionLabel, { color: meta.color }]}>{session.label}</Text>
               ) : null}
-              {session.description.map((line, li) =>
-                line === '' ? (
-                  <View key={li} style={{ height: 8 }} />
-                ) : (
+              {session.description.map((line, li) => {
+                if (line === '') return <View key={li} style={{ height: 8 }} />;
+                if (/strength training/i.test(line)) {
+                  return (
+                    <Pressable key={li} onPress={onOpenStrength} style={styles.strengthLineBtn}>
+                      <Text style={styles.strengthLineText}>💪 View Strength Workout →</Text>
+                    </Pressable>
+                  );
+                }
+                return (
                   <Text key={li} style={styles.bodyLine}>
                     {line}
                   </Text>
-                )
-              )}
+                );
+              })}
             </View>
           ))}
           <Pressable onPress={onOpenLogger} style={styles.logBtn}>
@@ -428,6 +457,8 @@ const styles = StyleSheet.create({
   chipCaret: { color: colors.muted, fontSize: 12 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   syncDot: { height: 8, width: 8, borderRadius: 4 },
+  iconBtn: { height: 34, width: 34, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card },
+  iconBtnText: { fontSize: 16 },
   count: { color: colors.accent, fontSize: 18, fontWeight: '800' },
   countTotal: { color: colors.muted, fontSize: 12, fontWeight: '400' },
   countLabel: { color: colors.muted, fontSize: 11 },
@@ -474,6 +505,8 @@ const styles = StyleSheet.create({
   sessionDivider: { marginTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: 12 },
   sessionLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5, marginBottom: 4, textTransform: 'uppercase' },
   bodyLine: { color: colors.foreground, fontSize: 14, lineHeight: 21 },
+  strengthLineBtn: { marginTop: 4, alignSelf: 'flex-start', backgroundColor: colors.accent + '20', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
+  strengthLineText: { color: colors.accent, fontSize: 13, fontWeight: '700' },
   logBtn: { marginTop: 12, borderRadius: 10, backgroundColor: colors.accent, paddingVertical: 11, alignItems: 'center' },
   logBtnText: { color: '#000', fontSize: 14, fontWeight: '800' },
   markBtn: { marginTop: 8, borderRadius: 10, paddingVertical: 9, alignItems: 'center' },
