@@ -32,6 +32,7 @@
           "imageWidth": 120
         }
       ],
+      "expo-notifications",
       [
         "expo-widgets",
         {

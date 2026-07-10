@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DayLogger } from '@/components/day-logger';
 import { Gate } from '@/components/gate';
 import { Metrics } from '@/components/metrics';
+import { Settings } from '@/components/settings';
 import { StrengthSheet } from '@/components/strength-sheet';
 import { Together } from '@/components/together';
 import { useSyncedProgress } from '@/hooks/use-synced-progress';
@@ -18,7 +19,15 @@ import {
   type WorkoutType,
 } from '@/lib/program-data';
 import { getPasscode, getProfileId } from '@/lib/profiles';
-import { currentPosition, getProgramPref, getStartDate } from '@/lib/program-prefs';
+import {
+  currentPosition,
+  getProgramPref,
+  getRestPref,
+  getStartDate,
+  setProgramPref,
+  setRestPref,
+  setStartDate,
+} from '@/lib/program-prefs';
 import { onSyncStatus, setActiveProgram, type SyncStatus } from '@/lib/sync';
 import { colors } from '@/lib/theme';
 
@@ -40,6 +49,8 @@ export default function Home() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const [loggerDay, setLoggerDay] = useState<{ week: number; day: number } | null>(null);
   const [strengthWeek, setStrengthWeek] = useState<number | null>(null);
+  const [restPref, setRestPrefState] = useState<number>(() => getRestPref(getProfileId()));
+  const [showSettings, setShowSettings] = useState(false);
 
   const program = getProgram(selectedProgram) ?? getProgram('10week')!;
 
@@ -88,8 +99,25 @@ export default function Home() {
     setMyProfileId(pid);
     setSelectedProgram(getProgramPref(pid));
     setStartDateState(getStartDate(pid));
+    setRestPrefState(getRestPref(pid));
     setUnlocked(true);
     setShowGate(false);
+  }, []);
+
+  const changeProgram = useCallback((id: string) => {
+    const pid = getProfileId();
+    if (pid) setProgramPref(pid, id);
+    setSelectedProgram(id);
+  }, []);
+  const changeStartDate = useCallback((iso: string) => {
+    const pid = getProfileId();
+    if (pid) setStartDate(pid, iso);
+    setStartDateState(iso || null);
+  }, []);
+  const changeRestPref = useCallback((sec: number) => {
+    const pid = getProfileId();
+    if (pid) setRestPref(pid, sec);
+    setRestPrefState(sec);
   }, []);
 
   if (!unlocked) return <Gate onUnlock={handleUnlock} />;
@@ -125,6 +153,9 @@ export default function Home() {
           ) : null}
           <Pressable onPress={() => setStrengthWeek(week.week)} style={styles.iconBtn} hitSlop={6}>
             <Text style={styles.iconBtnText}>🏋️</Text>
+          </Pressable>
+          <Pressable onPress={() => setShowSettings(true)} style={styles.iconBtn} hitSlop={6}>
+            <Text style={styles.iconBtnText}>⚙️</Text>
           </Pressable>
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={styles.count}>
@@ -287,6 +318,21 @@ export default function Home() {
           serverLogs={serverLogs}
           serverSets={serverSets}
           onClose={() => setStrengthWeek(null)}
+        />
+      ) : null}
+
+      {/* Settings */}
+      {showSettings ? (
+        <Settings
+          myProfile={myProfile}
+          programId={selectedProgram}
+          startDate={startDate}
+          restPref={restPref}
+          onProgramChange={changeProgram}
+          onStartDateChange={changeStartDate}
+          onRestPrefChange={changeRestPref}
+          onReminderSaved={refresh}
+          onClose={() => setShowSettings(false)}
         />
       ) : null}
     </View>

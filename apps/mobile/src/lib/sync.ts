@@ -63,6 +63,7 @@ export async function pullAll(passcode: string): Promise<{ ok: boolean; snapshot
 }
 
 export async function setReminder(profile: string, r: { hour?: number; min?: number; enabled?: boolean }) {
+  if (DEV_BYPASS) return { success: true };
   const passcode = getPasscode();
   if (!passcode) return { error: 'locked' };
   return call({ action: 'set-reminder', passcode, profile, ...r });
@@ -70,6 +71,7 @@ export async function setReminder(profile: string, r: { hour?: number; min?: num
 
 // Toggle whether this profile gets pinged when a family member finishes a workout.
 export async function setActivityNotify(profile: string, enabled: boolean) {
+  if (DEV_BYPASS) return { success: true };
   const passcode = getPasscode();
   if (!passcode) return { error: 'locked' };
   return call({ action: 'set-activity', passcode, profile, enabled });
