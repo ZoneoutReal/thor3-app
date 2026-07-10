@@ -4,7 +4,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DayLogger } from '@/components/day-logger';
 import { Gate } from '@/components/gate';
+import { Metrics } from '@/components/metrics';
 import { StrengthSheet } from '@/components/strength-sheet';
+import { Together } from '@/components/together';
 import { useSyncedProgress } from '@/hooks/use-synced-progress';
 import { fmtDuration } from '@/lib/day-steps';
 import {
@@ -54,7 +56,7 @@ export default function Home() {
 
   const week = program.data[Math.min(weekIdx, program.data.length - 1)];
   const position = currentPosition(program, startDate);
-  const { isDone, toggle, count, snapshot, refresh } = useSyncedProgress(
+  const { isDone, toggle, count, done, snapshot, refresh, refreshing } = useSyncedProgress(
     selectedProgram,
     myProfileId,
     unlocked === true
@@ -217,11 +219,24 @@ export default function Home() {
             </View>
           </ScrollView>
         </>
+      ) : activeTab === 'metrics' ? (
+        <View style={{ flex: 1 }}>
+          <Metrics serverLogs={serverLogs} profileId={myProfileId} programId={selectedProgram} />
+        </View>
+      ) : snapshot ? (
+        <View style={{ flex: 1 }}>
+          <Together
+            snapshot={snapshot}
+            myProfileId={myProfileId}
+            myDays={[...done]}
+            programId={selectedProgram}
+            onRefresh={refresh}
+            refreshing={refreshing}
+          />
+        </View>
       ) : (
         <View style={styles.placeholder}>
-          <Text style={styles.placeholderText}>
-            {activeTab === 'metrics' ? 'Metrics' : 'Together'} lands in a later update.
-          </Text>
+          <Text style={styles.placeholderText}>Loading progress...</Text>
         </View>
       )}
 

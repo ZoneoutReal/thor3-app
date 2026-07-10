@@ -35,7 +35,23 @@ export const mockSnapshot: Snapshot = {
     },
   ],
   progress: [
-    { profile: 'test-alpha', program: '10week', days: ['1-1', '1-2'], sets: [], logs: {}, updated_at: '1970-01-01T00:00:00.000Z' },
-    { profile: 'test-bravo', program: '10week', days: ['1-1'], sets: [], logs: {}, updated_at: '1970-01-01T00:00:00.000Z' },
+    {
+      profile: 'test-alpha',
+      program: '10week',
+      days: ['1-1', '1-2', '2-1', '2-3'],
+      sets: [],
+      // A couple of charted trends so Metrics has something to draw in dev.
+      logs: {
+        r1: { v: '18:30', m: 'run-2mi', w: 1 },
+        r2: { v: '17:45', m: 'run-2mi', w: 2 },
+        r3: { v: '17:05', m: 'run-2mi', w: 3 },
+        p1: { v: '42', m: 'pushups', w: 1 },
+        p2: { v: '48', m: 'pushups', w: 2 },
+        p3: { v: '55', m: 'pushups', w: 3 },
+        'session-dur-1-1': { v: '1980', m: 'session-duration', w: 1 },
+      },
+      updated_at: '2026-07-10T09:15:00.000Z',
+    },
+    { profile: 'test-bravo', program: '10week', days: ['1-1'], sets: [], logs: {}, updated_at: '2026-07-08T18:00:00.000Z' },
   ],
 };
