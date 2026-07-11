@@ -1,5 +1,5 @@
 import { Image, Text, VStack } from '@expo/ui/swift-ui';
-import { font, foregroundStyle, padding } from '@expo/ui/swift-ui/modifiers';
+import { font, foregroundStyle, frame, padding } from '@expo/ui/swift-ui/modifiers';
 import { createLiveActivity, type LiveActivityEnvironment } from 'expo-widgets';
 
 // The iOS Live Activity for the running timer (Lock Screen banner + Dynamic
@@ -25,7 +25,9 @@ const RunActivity = (props: RunActivityProps, _env: LiveActivityEnvironment) => 
   const range = { lower: new Date(props.startedAt), upper: new Date(props.startedAt + CAP_MS) };
   return {
     banner: (
-      <VStack modifiers={[padding({ all: 14 })]}>
+      // Fill the banner width + left-align so the content lays out instead of
+      // collapsing to a blank/zero-size view on the Lock Screen.
+      <VStack modifiers={[padding({ all: 14 }), frame({ maxWidth: 500, alignment: 'leading' })]}>
         <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(MUTED)]}>{props.label}</Text>
         <Text timerInterval={range} countsDown={false} modifiers={[font({ size: 36, weight: 'bold' }), foregroundStyle(ACCENT)]} />
       </VStack>
