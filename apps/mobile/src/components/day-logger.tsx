@@ -90,20 +90,30 @@ function CountdownTimer({ seconds, done, onExpire }: { seconds: number; done: bo
     expireRef.current = onExpire;
   }, [onExpire]);
 
+  // Anchor the finish to a wall-clock timestamp so a locked/backgrounded phone
+  // lands on the correct remaining time on return (a per-second counter freezes
+  // while suspended and under-counts). Fire the terminal cue exactly once.
+  const endAtRef = useRef(0);
+  const firedRef = useRef(false);
   useEffect(() => {
     if (!running) return;
-    if (remaining <= 0) {
-      // Terminal transition of a countdown: stop, cue, check the step off.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setRunning(false);
-      beep();
-      vibrate(400);
-      expireRef.current();
-      return;
-    }
-    const id = setTimeout(() => setRemaining((r) => r - 1), 1000);
-    return () => clearTimeout(id);
-  }, [running, remaining]);
+    endAtRef.current = Date.now() + remaining * 1000;
+    firedRef.current = false;
+    const tick = () => {
+      const left = Math.max(0, Math.round((endAtRef.current - Date.now()) / 1000));
+      setRemaining(left);
+      if (left <= 0 && !firedRef.current) {
+        firedRef.current = true;
+        setRunning(false);
+        beep();
+        vibrate(400);
+        expireRef.current();
+      }
+    };
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running]);
 
   const pct = seconds > 0 ? (remaining / seconds) * 100 : 0;
   return (
@@ -116,6 +126,7 @@ function CountdownTimer({ seconds, done, onExpire }: { seconds: number; done: bo
       </View>
       <Pressable
         onPress={() => {
+          if (remaining <= 0) return; // already finished — don't re-fire the cue
           unlockAudio();
           setRunning((r) => !r);
         }}
@@ -137,11 +148,21 @@ function CountdownTimer({ seconds, done, onExpire }: { seconds: number; done: bo
 function Stopwatch({ onStop }: { onStop: (elapsedSec: number) => void }) {
   const [elapsed, setElapsed] = useState(0);
   const [running, setRunning] = useState(false);
+  // Wall-clock derived (base accumulated + time since last Start) so it keeps
+  // correct time across a phone lock instead of freezing like a per-second counter.
+  const startAtRef = useRef(0);
+  const baseRef = useRef(0);
   useEffect(() => {
     if (!running) return;
-    const id = setTimeout(() => setElapsed((e) => e + 1), 1000);
-    return () => clearTimeout(id);
-  }, [running, elapsed]);
+    startAtRef.current = Date.now();
+    baseRef.current = elapsed;
+    const id = setInterval(
+      () => setElapsed(baseRef.current + Math.floor((Date.now() - startAtRef.current) / 1000)),
+      500
+    );
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running]);
 
   return (
     <View style={styles.timerBox}>
@@ -149,8 +170,10 @@ function Stopwatch({ onStop }: { onStop: (elapsedSec: number) => void }) {
       <Pressable
         onPress={() => {
           if (running) {
+            const finalSec = baseRef.current + Math.floor((Date.now() - startAtRef.current) / 1000);
             setRunning(false);
-            onStop(elapsed);
+            setElapsed(finalSec);
+            onStop(finalSec);
           } else setRunning(true);
         }}
         style={[styles.timerBtn, { flex: 1 }]}>
@@ -325,20 +348,25 @@ export function DayLogger({
   // drives the in-app timer. The native timer text ticks itself; we only start
   // it on GO and end it on finish/discard.
   const activityLabel = `Week ${week} · ${typeLabel}`;
+  // Drive the iOS Live Activity from state, not button handlers: start it whenever
+  // a session is running (so it re-attaches on reopen + relaunch) and end it on
+  // cleanup (closing the logger, opening the strength sheet, or finishing — all of
+  // which previously orphaned a ticking Lock Screen widget).
+  useEffect(() => {
+    if (!running || !startedAt) return;
+    startRunActivity({ startedAt: Date.parse(startedAt), label: activityLabel });
+    return () => endRunActivity();
+  }, [running, startedAt, activityLabel]);
+
   const startSession = () => {
-    const iso = new Date().toISOString();
-    setLog(startKey, iso, 'session-start', week);
-    startRunActivity({ startedAt: Date.parse(iso), label: activityLabel });
+    setLog(startKey, new Date().toISOString(), 'session-start', week);
   };
   const discardSession = () => {
     setLog(startKey, '', 'session-start', week);
-    endRunActivity();
   };
   const restartSession = () => {
-    const iso = new Date().toISOString();
     setLog(durKey, '', 'session-duration', week);
-    setLog(startKey, iso, 'session-start', week);
-    startRunActivity({ startedAt: Date.parse(iso), label: activityLabel });
+    setLog(startKey, new Date().toISOString(), 'session-start', week);
   };
   const beginCountdown = () => {
     if (preCount == null) {
@@ -376,7 +404,6 @@ export function DayLogger({
       setLog(durKey, String(parsedInput), 'session-duration', week);
     }
     setConfirming(false);
-    endRunActivity();
     onFinish();
   };
 

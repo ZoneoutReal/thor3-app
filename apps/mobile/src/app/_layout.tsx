@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { DEV_BYPASS, DEV_PASSCODE, DEV_PROFILE_ID } from '@/lib/dev-bypass';
+import { configureAudio } from '@/lib/feedback';
 import { getPasscode, setPasscode, setProfileId } from '@/lib/profiles';
 import { hydrateStore } from '@/lib/store';
 import { initSync } from '@/lib/sync';
@@ -29,6 +30,7 @@ export default function RootLayout() {
           setPasscode(DEV_PASSCODE);
           setProfileId(DEV_PROFILE_ID);
         }
+        configureAudio();
         initSync();
         setReady(true);
       })
