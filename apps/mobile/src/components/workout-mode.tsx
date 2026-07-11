@@ -234,7 +234,7 @@ function ExerciseCard({
   setSet: (id: string, val: boolean) => void;
   getVal: (key: string) => string;
   setLog: (key: string, value: string, week?: number) => void;
-  onStartRest: (seconds?: number) => void;
+  onStartRest: (seconds?: number, exercise?: string) => void;
 }) {
   const doneCount = sets.filter((_, i) => isDone(idFor(i))).length;
   const rest = restPrefSec > 0 ? restPrefSec : restSeconds(row.rest);
@@ -260,7 +260,7 @@ function ExerciseCard({
                   isDone={isDone(id)}
                   onComplete={() => {
                     setSet(id, true);
-                    onStartRest(rest);
+                    onStartRest(rest, row.name);
                   }}
                   onReopen={() => setSet(id, false)}
                 />
@@ -351,6 +351,7 @@ export function WorkoutMode({
   singleDayIndex,
   serverLogs,
   serverSets,
+  onActivity,
 }: {
   block: StrengthBlock;
   programId: string;
@@ -359,6 +360,9 @@ export function WorkoutMode({
   singleDayIndex?: number;
   serverLogs?: Record<string, LoggedValue>;
   serverSets?: string[];
+  // Reports the live workout phase up to the day logger so it can drive the iOS
+  // Live Activity (work timer <-> rest countdown, current exercise). Absolute ms.
+  onActivity?: (s: { phase: 'active' | 'rest'; exercise: string; phaseStartedAt: number; restEndsAt: number }) => void;
 }) {
   const wantWeek =
     lockWeek != null && block.weeks.includes(lockWeek)
@@ -381,7 +385,14 @@ export function WorkoutMode({
 
   const [restPrefSec] = useState(() => getRestPref(getProfileId()));
   const [runnerDay, setRunnerDay] = useState<StrengthDay | null>(null);
-  const [rest, setRest] = useState<{ total: number; remaining: number } | null>(null);
+  const [rest, setRest] = useState<{ total: number; remaining: number; exercise: string; endsAt: number } | null>(null);
+  // Keep the latest onActivity in a ref so the timer effects/callbacks below can
+  // report phase changes without taking it as a dependency (which would restart
+  // the 1s rest tick every render).
+  const onActivityRef = useRef(onActivity);
+  useEffect(() => {
+    onActivityRef.current = onActivity;
+  }, [onActivity]);
 
   useEffect(() => {
     if (!rest || rest.remaining <= 0) return;
@@ -393,15 +404,19 @@ export function WorkoutMode({
     if (rest && rest.remaining === 0) {
       beep();
       vibrate(300);
+      // Rest done -> back to the active/working phase; the running timer restarts now.
+      onActivityRef.current?.({ phase: 'active', exercise: rest.exercise, phaseStartedAt: Date.now(), restEndsAt: 0 });
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setRest(null);
     }
   }, [rest]);
 
-  const startRest = useCallback((seconds?: number) => {
+  const startRest = useCallback((seconds?: number, exercise?: string) => {
     if (seconds && seconds > 0) {
       unlockAudio();
-      setRest({ total: seconds, remaining: seconds });
+      const endsAt = Date.now() + seconds * 1000;
+      setRest({ total: seconds, remaining: seconds, exercise: exercise ?? '', endsAt });
+      onActivityRef.current?.({ phase: 'rest', exercise: exercise ?? '', phaseStartedAt: 0, restEndsAt: endsAt });
     }
   }, []);
 
@@ -557,10 +572,21 @@ export function WorkoutMode({
                 <View style={[styles.restFill, { width: `${(rest.remaining / rest.total) * 100}%` }]} />
               </View>
               <Text style={styles.restClock}>{mmss(rest.remaining)}</Text>
-              <Pressable onPress={() => setRest((r) => (r ? { total: r.total + 15, remaining: r.remaining + 15 } : r))} style={styles.smallBtn}>
+              <Pressable
+                onPress={() => {
+                  const endsAt = rest.endsAt + 15000;
+                  setRest({ ...rest, total: rest.total + 15, remaining: rest.remaining + 15, endsAt });
+                  onActivityRef.current?.({ phase: 'rest', exercise: rest.exercise, phaseStartedAt: 0, restEndsAt: endsAt });
+                }}
+                style={styles.smallBtn}>
                 <Text style={styles.smallBtnText}>+15s</Text>
               </Pressable>
-              <Pressable onPress={() => setRest(null)} style={styles.smallBtn}>
+              <Pressable
+                onPress={() => {
+                  onActivityRef.current?.({ phase: 'active', exercise: rest.exercise, phaseStartedAt: Date.now(), restEndsAt: 0 });
+                  setRest(null);
+                }}
+                style={styles.smallBtn}>
                 <Text style={[styles.smallBtnText, { color: colors.accent }]}>Skip</Text>
               </Pressable>
             </View>

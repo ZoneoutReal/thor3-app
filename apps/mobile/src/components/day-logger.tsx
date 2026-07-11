@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -16,7 +16,7 @@ import { WarmUp } from '@/components/warm-up';
 import { WorkoutMode } from '@/components/workout-mode';
 import { fmtClock, fmtDuration, pacePerMile, parseDay, type DayStep } from '@/lib/day-steps';
 import { beep, unlockAudio, vibrate } from '@/lib/feedback';
-import { endRunActivity, startRunActivity } from '@/lib/live-activity';
+import { endRunActivity, startRunActivity, updateRunActivity } from '@/lib/live-activity';
 import { getStrengthBlockForWeek, type DayWorkout } from '@/lib/program-data';
 import type { LoggedValue } from '@/lib/sync';
 import { colors } from '@/lib/theme';
@@ -352,13 +352,41 @@ export function DayLogger({
   // drives the in-app timer. The native timer text ticks itself; we only start
   // it on GO and end it on finish/discard.
   const activityLabel = `Week ${week} · ${typeLabel}`;
-  // Drive the iOS Live Activity from state, not button handlers: start it whenever
-  // a session is running (so it re-attaches on reopen + relaunch) and end it on
-  // cleanup (closing the logger, opening the strength sheet, or finishing — all of
-  // which previously orphaned a ticking Lock Screen widget).
+  // Refs so the stable Live Activity reporter always reads the current session
+  // context without being recreated each render (which would churn WorkoutMode).
+  const startedAtRef = useRef(startedAt);
+  const activityLabelRef = useRef(activityLabel);
+  useEffect(() => {
+    startedAtRef.current = startedAt;
+    activityLabelRef.current = activityLabel;
+  }, [startedAt, activityLabel]);
+  // WorkoutMode reports rest<->work transitions + the current exercise; push each
+  // straight to the running activity (native re-render, no restart). Event-driven,
+  // so there is no phase state to desync across sessions. On run days nothing
+  // reports, so the widget stays the single running clock the start effect set.
+  const reportActivity = useCallback(
+    (s: { phase: 'active' | 'rest'; exercise: string; phaseStartedAt: number; restEndsAt: number }) => {
+      const sa = startedAtRef.current;
+      if (!sa) return;
+      const at = Date.parse(sa);
+      updateRunActivity({
+        startedAt: at,
+        label: activityLabelRef.current,
+        phase: s.phase,
+        exercise: s.exercise,
+        phaseStartedAt: s.phaseStartedAt || at,
+        restEndsAt: s.restEndsAt,
+      });
+    },
+    [],
+  );
+  // Start the activity whenever a session is running (re-attaches on reopen +
+  // relaunch) in the active phase, and end it on cleanup (closing the logger,
+  // opening the strength sheet, or finishing) so no ticking widget is orphaned.
   useEffect(() => {
     if (!running || !startedAt) return;
-    startRunActivity({ startedAt: Date.parse(startedAt), label: activityLabel });
+    const at = Date.parse(startedAt);
+    startRunActivity({ startedAt: at, label: activityLabel, phase: 'active', exercise: '', phaseStartedAt: at, restEndsAt: 0 });
     return () => endRunActivity();
   }, [running, startedAt, activityLabel]);
 
@@ -501,6 +529,7 @@ export function DayLogger({
                           singleDayIndex={strengthDayIndex}
                           serverLogs={serverLogs}
                           serverSets={serverSets}
+                          onActivity={reportActivity}
                         />
                       </View>
                     ) : (

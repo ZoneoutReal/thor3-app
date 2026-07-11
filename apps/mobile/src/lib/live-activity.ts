@@ -32,7 +32,7 @@ function endAll() {
   }
 }
 
-// Start (or restart) the Lock Screen / Dynamic Island run timer. Ends any live
+// Start (or restart) the Lock Screen / Dynamic Island session. Ends any live
 // instance first so a fresh start or a restart never stacks activities.
 export function startRunActivity(props: RunActivityProps) {
   if (!LIVE_ACTIVITY_ENABLED || Platform.OS !== 'ios') return;
@@ -41,6 +41,20 @@ export function startRunActivity(props: RunActivityProps) {
     factory().start(props);
   } catch {
     /* best-effort: e.g. the user disabled Live Activities in Settings */
+  }
+}
+
+// Push new state (work<->rest, exercise, timers) to the running activity so the
+// banner + Dynamic Island reflect the live workout phase. No-ops if nothing is
+// live yet (the start effect owns creation); the props re-render natively, so we
+// only call this on a meaningful phase/exercise change, never per second.
+export function updateRunActivity(props: RunActivityProps) {
+  if (!LIVE_ACTIVITY_ENABLED || Platform.OS !== 'ios') return;
+  try {
+    const instances = factory().getInstances();
+    for (const a of instances) void a.update(props);
+  } catch {
+    /* best-effort */
   }
 }
 
