@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { WarmUp } from '@/components/warm-up';
 import { WorkoutMode } from '@/components/workout-mode';
 import {
-  DYNAMIC_WARMUP,
   getStrengthBlockForWeek,
   strengthBlocks,
   type StrengthBlock,
@@ -137,36 +137,6 @@ function CircuitDay({ day }: { day: StrengthDay }) {
           <Text style={styles.circuitRx}>{row.prescription as string}</Text>
         </View>
       ))}
-    </View>
-  );
-}
-
-function WarmUp() {
-  const [open, setOpen] = useState(false);
-  return (
-    <View style={styles.warmCard}>
-      <Pressable onPress={() => setOpen((o) => !o)} style={styles.warmHead}>
-        <Text style={styles.warmTitle}>
-          Dynamic Warm-Up <Text style={styles.warmSub}>before every session</Text>
-        </Text>
-        <Text style={styles.chevron}>{open ? '▴' : '▾'}</Text>
-      </Pressable>
-      {open ? (
-        <View style={styles.warmBody}>
-          <Text style={styles.noteText}>Perform each movement over 10-15 yards.</Text>
-          <View style={{ gap: 4, marginTop: 8 }}>
-            {DYNAMIC_WARMUP.map((m) => (
-              <View key={m.name} style={styles.warmItem}>
-                <View style={styles.dot} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.warmName}>{m.name}</Text>
-                  {m.note ? <Text style={styles.warmNote}>{m.note}</Text> : null}
-                </View>
-              </View>
-            ))}
-          </View>
-        </View>
-      ) : null}
     </View>
   );
 }

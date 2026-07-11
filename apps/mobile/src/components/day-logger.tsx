@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { WarmUp } from '@/components/warm-up';
 import { fmtClock, fmtDuration, pacePerMile, parseDay, type DayStep } from '@/lib/day-steps';
 import { beep, unlockAudio, vibrate } from '@/lib/feedback';
 import { endRunActivity, startRunActivity } from '@/lib/live-activity';
@@ -468,6 +469,12 @@ export function DayLogger({
                 </View>
               )}
             </View>
+
+            {/* Dynamic warm-up — on every workout day, checkable per day. */}
+            <WarmUp
+              isChecked={(i) => done.has(`${week}-${day.day}-warmup-${i}`)}
+              onToggle={(i) => toggleDone(`${week}-${day.day}-warmup-${i}`)}
+            />
 
             {sessions.map((session, si) => (
               <View key={si} style={{ gap: 8 }}>
