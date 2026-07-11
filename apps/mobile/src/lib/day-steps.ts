@@ -30,11 +30,6 @@ export type LoggableSession = { label?: string; steps: DayStep[] };
 
 // --- line parsing helpers ---------------------------------------------------
 
-const num = (s: string) => {
-  const m = s.match(/(\d+(?:\.\d+)?)/);
-  return m ? parseFloat(m[1]) : null;
-};
-
 // "2 minutes" / "5 min" / "10:00" / "0:30" / "45 seconds" -> seconds
 export function durationSeconds(s: string): number | null {
   const clock = s.match(/(\d+):(\d{2})/);
@@ -119,7 +114,6 @@ export function parseDay(day: DayWorkout): LoggableSession[] {
       // Interval sets: expand into one loggable rep per interval.
       const iv = intervals(line);
       if (iv) {
-        const label = line.replace(/^run:\s*/i, "").replace(/^bike:\s*/i, "");
         for (let i = 1; i <= iv.count; i++) {
           if (iv.distance) {
             push({

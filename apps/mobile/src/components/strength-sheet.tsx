@@ -174,13 +174,13 @@ function WarmUp() {
 export function StrengthSheet({
   onClose,
   initialWeek,
-  programId = '10week',
+  programId,
   serverLogs,
   serverSets,
 }: {
   onClose: () => void;
   initialWeek?: number;
-  programId?: string;
+  programId: string;
   serverLogs?: Record<string, LoggedValue>;
   serverSets?: string[];
 }) {
@@ -190,6 +190,10 @@ export function StrengthSheet({
   const [mode, setMode] = useState<'workout' | 'reference'>('workout');
   const block = strengthBlocks.find((b) => b.title === activeTitle) ?? strengthBlocks[0];
   const highlightWeek = block.weeks.includes(initialWeek ?? -1) ? initialWeek : undefined;
+  // Weeks 11-14 (14-week program) have no authored strength block. Never fall
+  // back to the Weeks 1-4 block for LOGGING — that silently writes sets under
+  // week 1. Show a notice instead; reference browsing still works.
+  const initialHasBlock = initialWeek == null || getStrengthBlockForWeek(initialWeek) != null;
 
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
@@ -230,7 +234,29 @@ export function StrengthSheet({
         <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + 40 }]}>
           <WarmUp />
           {mode === 'workout' ? (
-            <WorkoutMode block={block} programId={programId} initialWeek={initialWeek} serverLogs={serverLogs} serverSets={serverSets} />
+            initialHasBlock ? (
+              <WorkoutMode block={block} programId={programId} initialWeek={initialWeek} serverLogs={serverLogs} serverSets={serverSets} />
+            ) : (
+              <View
+                style={{
+                  marginTop: 16,
+                  padding: 16,
+                  gap: 8,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  backgroundColor: colors.card,
+                }}>
+                <Text style={{ color: colors.foreground, fontSize: 15, fontWeight: '600' }}>
+                  No strength sheet for week {initialWeek} yet
+                </Text>
+                <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 19 }}>
+                  The strength sheet covers weeks 1&ndash;10. Weeks 11&ndash;14 aren&rsquo;t in the app yet, so logging
+                  is turned off here to avoid saving sets under the wrong week. Tap &ldquo;reference&rdquo; above to
+                  browse the blocks.
+                </Text>
+              </View>
+            )
           ) : (
             <>
               {block.days.map((day) => (

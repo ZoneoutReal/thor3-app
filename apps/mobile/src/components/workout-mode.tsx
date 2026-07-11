@@ -478,12 +478,12 @@ export function WorkoutMode({
                 />
               ) : (
                 <View style={{ gap: 8 }}>
-                  {(day.rows ?? []).map((row) => {
+                  {(day.rows ?? []).map((row, ri) => {
                     const rounds = day.kind === 'circuit' && !row.group ? day.roundsByWeek?.[weekIndex] : undefined;
                     const sets = parseStrengthSets(prescriptionForWeek(row, weekIndex), rounds);
                     return (
                       <ExerciseCard
-                        key={row.name}
+                        key={`${row.name}-${ri}`}
                         row={row}
                         sets={sets}
                         week={targetWeek}
