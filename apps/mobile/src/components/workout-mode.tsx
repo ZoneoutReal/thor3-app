@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { SupersetRunner } from '@/components/superset-runner';
 import { beep, unlockAudio, vibrate } from '@/lib/feedback';
 import {
   parseStrengthSets,
@@ -367,6 +368,7 @@ export function WorkoutMode({
   const { isDone, toggle, set: setSet, setLog, getVal } = useSetProgress(programId, serverSets, serverLogs);
 
   const [restPrefSec] = useState(() => getRestPref(getProfileId()));
+  const [runnerDay, setRunnerDay] = useState<StrengthDay | null>(null);
   const [rest, setRest] = useState<{ total: number; remaining: number } | null>(null);
 
   useEffect(() => {
@@ -457,6 +459,14 @@ export function WorkoutMode({
                 </Text>
               </View>
 
+              {day.kind === 'table' && day.rows && day.rows.length ? (
+                <Pressable
+                  onPress={() => setRunnerDay(day)}
+                  style={{ backgroundColor: colors.accent, borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={{ color: '#000', fontWeight: '800', fontSize: 15 }}>▶  Start guided workout</Text>
+                </Pressable>
+              ) : null}
+
               {day.rounds || day.note ? (
                 <View style={styles.metaRow}>
                   {day.rounds ? (
@@ -525,6 +535,19 @@ export function WorkoutMode({
           ) : null}
         </View>
       </Modal>
+
+      {runnerDay ? (
+        <SupersetRunner
+          day={runnerDay}
+          week={targetWeek}
+          weekIndex={weekIndex}
+          programId={programId}
+          restPrefSec={restPrefSec}
+          serverLogs={serverLogs}
+          serverSets={serverSets}
+          onClose={() => setRunnerDay(null)}
+        />
+      ) : null}
     </View>
   );
 }
