@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppState, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { SupersetRunner } from '@/components/superset-runner';
 import { beep, unlockAudio, vibrate } from '@/lib/feedback';
@@ -393,6 +393,31 @@ export function WorkoutMode({
   useEffect(() => {
     onActivityRef.current = onActivity;
   }, [onActivity]);
+  const restRef = useRef(rest);
+  useEffect(() => {
+    restRef.current = rest;
+  }, [rest]);
+
+  // When the app returns to the foreground (e.g. the user unlocks to start the next
+  // set), the JS rest countdown that paused while backgrounded can't be trusted —
+  // and a locked Live Activity never re-renders on its own, so it can be stuck on a
+  // finished rest. Reconcile against the wall clock: if the rest has elapsed, flip
+  // to the working phase immediately so the widget shows the running timer; else
+  // recompute the remaining seconds so the in-app bar is accurate too.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      const r = restRef.current;
+      if (!r) return;
+      if (Date.now() >= r.endsAt) {
+        onActivityRef.current?.({ phase: 'active', exercise: r.exercise, phaseStartedAt: r.endsAt, restEndsAt: 0 });
+        setRest(null);
+      } else {
+        setRest({ ...r, remaining: Math.max(0, Math.round((r.endsAt - Date.now()) / 1000)) });
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     if (!rest || rest.remaining <= 0) return;
