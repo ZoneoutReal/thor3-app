@@ -96,14 +96,17 @@ export type Patch = {
   logs?: Record<string, LoggedValue>;
   done?: { id: string; label: string };
 };
-type Outbox = { profile: string; program: string; patch: Patch };
+type OutboxEntry = { profile: string; program: string; patch: Patch };
 
 const OUTBOX_KEY = 'thor3-outbox';
 const DEBOUNCE_MS = 700;
-const RETRY_MS = 5000;
+const RETRY_BASE_MS = 5000;
+const RETRY_MAX_MS = 5 * 60_000;
+const MAX_ATTEMPTS_BEFORE_DROP = 4;
 
 let timer: ReturnType<typeof setTimeout> | null = null;
 let inFlight = false;
+let attempts = 0;
 
 export type SyncStatus = 'idle' | 'syncing' | 'error';
 let status: SyncStatus = 'idle';
@@ -124,17 +127,25 @@ export function onSyncStatus(fn: (s: SyncStatus) => void): () => void {
   };
 }
 
-function readOutbox(): Outbox | null {
+// The outbox is a FIFO queue of at most one entry per (profile, program). A
+// context switch (different brother or program) ENQUEUES a new entry rather than
+// clobbering the pending one, so nothing queued offline is ever dropped.
+function readOutbox(): OutboxEntry[] {
   try {
     const raw = getItem(OUTBOX_KEY);
-    return raw ? (JSON.parse(raw) as Outbox) : null;
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) return parsed as OutboxEntry[];
+    // Back-compat: migrate a legacy single-object outbox to a one-entry queue.
+    const one = parsed as OutboxEntry;
+    return one && one.profile ? [one] : [];
   } catch {
-    return null;
+    return [];
   }
 }
-function writeOutbox(o: Outbox | null) {
+function writeOutbox(q: OutboxEntry[]) {
   try {
-    if (o) setItem(OUTBOX_KEY, JSON.stringify(o));
+    if (q.length) setItem(OUTBOX_KEY, JSON.stringify(q));
     else removeItem(OUTBOX_KEY);
   } catch {
     /* ignore */
@@ -155,40 +166,57 @@ function scheduleFlush(ms = DEBOUNCE_MS) {
 export async function flush(): Promise<void> {
   if (DEV_BYPASS) return; // dev bypass runs fully offline; local writes still persist
   if (inFlight) return;
-  const out = readOutbox();
-  if (!out) {
+  const queue = readOutbox();
+  if (!queue.length) {
     setStatus('idle');
     return;
   }
   const passcode = getPasscode();
   if (!passcode) return; // locked — keep the outbox for after unlock
 
+  const head = queue[0];
+  const sentPatch = head.patch;
   inFlight = true;
   setStatus('syncing');
-  const r = await call({ action: 'push-progress', passcode, profile: out.profile, program: out.program, ...out.patch });
+  const r = await call({ action: 'push-progress', passcode, profile: head.profile, program: head.program, ...sentPatch });
   inFlight = false;
 
   if (r.error) {
+    attempts += 1;
+    // A non-retryable client error (a 4xx that isn't auth/rate-limit) would loop
+    // forever and block the whole queue. After a few tries, drop the poison head
+    // so the remaining entries can still drain.
+    const status = typeof r.status === 'number' ? r.status : 0;
+    const nonRetryable = status >= 400 && status < 500 && status !== 401 && status !== 429;
+    if (nonRetryable && attempts >= MAX_ATTEMPTS_BEFORE_DROP) {
+      const rest = readOutbox().slice(1);
+      writeOutbox(rest);
+      attempts = 0;
+      if (rest.length) scheduleFlush();
+      else setStatus('idle');
+      return;
+    }
     setStatus('error');
-    scheduleFlush(RETRY_MS);
+    scheduleFlush(Math.min(RETRY_BASE_MS * 2 ** (attempts - 1), RETRY_MAX_MS));
     return;
   }
 
-  // Success. If more writes landed while we were in flight, flush again;
-  // otherwise the queue is empty. (push-progress upserts full arrays, so a
-  // redundant resend is harmless.)
+  attempts = 0;
+  // Success. Remove the entry we just sent — unless new writes for the same
+  // context merged into it while in flight, in which case keep it (minus the
+  // one-shot `done` hint, already delivered) so the new changes still get sent.
   const after = readOutbox();
-  const unchanged =
-    after &&
-    after.profile === out.profile &&
-    after.program === out.program &&
-    JSON.stringify(after.patch) === JSON.stringify(out.patch);
-  if (unchanged) {
-    writeOutbox(null);
-    setStatus('idle');
-  } else {
-    scheduleFlush();
+  const idx = after.findIndex((e) => e.profile === head.profile && e.program === head.program);
+  if (idx >= 0) {
+    if (JSON.stringify(after[idx].patch) === JSON.stringify(sentPatch)) {
+      after.splice(idx, 1);
+    } else {
+      delete after[idx].patch.done;
+    }
+    writeOutbox(after);
   }
+  if (readOutbox().length) scheduleFlush();
+  else setStatus('idle');
 }
 
 // Debounced, patch-merging pusher. Day toggles, set toggles, and value logs all
@@ -198,18 +226,17 @@ export function queuePush(patch: Patch) {
   const profile = getProfileId();
   if (!passcode || !profile) return;
 
-  const prev = readOutbox();
-  if (prev && (prev.profile !== profile || prev.program !== activeProgram)) {
-    // Context switched (profile or program). Flush the old queue before we start
-    // merging into a different row, so nothing is misattributed.
-    void flush();
+  const queue = readOutbox();
+  const idx = queue.findIndex((e) => e.profile === profile && e.program === activeProgram);
+  if (idx >= 0) {
+    // Merge into the pending entry for this context. Each field carries the full
+    // current value (whole days/sets/logs arrays), so a shallow merge = latest wins.
+    queue[idx].patch = { ...queue[idx].patch, ...patch };
+  } else {
+    // New (profile, program) context — enqueue, never overwrite another entry.
+    queue.push({ profile, program: activeProgram, patch: { ...patch } });
   }
-  const base: Outbox =
-    prev && prev.profile === profile && prev.program === activeProgram
-      ? prev
-      : { profile, program: activeProgram, patch: {} };
-  base.patch = { ...base.patch, ...patch };
-  writeOutbox(base);
+  writeOutbox(queue);
   scheduleFlush();
 }
 

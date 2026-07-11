@@ -19,10 +19,41 @@ const logsKey = (pid: string | null, program: string) =>
 const setsKey = (pid: string | null, program: string) =>
   pid ? `thor3-sets-${pid}-${program}` : `thor3-sets-${program}`;
 
+// Local deletion tombstones. The server merge (mergeServer*) is a union, so a
+// day/set/log the user UN-did would otherwise resurrect from the server row on
+// the next pull, before this device's removal has synced. We record removed ids
+// locally and subtract them from every merge; re-doing the action clears the mark.
+type TombKind = 'days' | 'sets' | 'logs';
+const tombKey = (kind: TombKind, pid: string | null, program: string) =>
+  pid ? `thor3-tomb-${kind}-${pid}-${program}` : `thor3-tomb-${kind}-${program}`;
+
+function readTomb(kind: TombKind, program: string): Set<string> {
+  try {
+    const raw = getItem(tombKey(kind, getProfileId(), program));
+    return raw ? new Set<string>(JSON.parse(raw)) : new Set<string>();
+  } catch {
+    return new Set<string>();
+  }
+}
+
+export function markTombstone(kind: TombKind, program: string, id: string, removed: boolean) {
+  const s = readTomb(kind, program);
+  if (removed ? s.has(id) : !s.has(id)) return; // already in the desired state
+  if (removed) s.add(id);
+  else s.delete(id);
+  setItem(tombKey(kind, getProfileId(), program), JSON.stringify([...s]));
+}
+
+export function withoutTombstoned(kind: TombKind, program: string, ids: Iterable<string>): string[] {
+  const t = readTomb(kind, program);
+  return [...new Set(ids)].filter((id) => !t.has(id));
+}
+
 export function readLogs(program: string): Record<string, LoggedValue> {
   const pid = getProfileId();
   try {
-    return JSON.parse(getItem(logsKey(pid, program)) || '{}');
+    const raw = getItem(logsKey(pid, program)) ?? getItem(`thor3-logs-${program}`);
+    return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
   }
@@ -47,8 +78,15 @@ export function writeLog(
 ): Record<string, LoggedValue> {
   const pid = getProfileId();
   const map = readLogs(program);
-  if (value.trim() === '') delete map[key];
-  else map[key] = { v: value.trim(), m: opts.metric, w: opts.week };
+  // Store the value RAW. Trimming here (on every keystroke of a controlled input)
+  // reverts trailing spaces, which makes it impossible to type a space in notes.
+  if (value.trim() === '') {
+    delete map[key];
+    markTombstone('logs', program, key, true);
+  } else {
+    map[key] = { v: value, m: opts.metric, w: opts.week };
+    markTombstone('logs', program, key, false);
+  }
   setItem(logsKey(pid, program), JSON.stringify(map));
   queuePush({ logs: map });
   return map;
@@ -60,6 +98,7 @@ export function writeSetDone(program: string, id: string, done: boolean): string
   const cur = new Set(readSets(program));
   if (done) cur.add(id);
   else cur.delete(id);
+  markTombstone('sets', program, id, !done);
   const arr = [...cur];
   setItem(setsKey(pid, program), JSON.stringify(arr));
   queuePush({ sets: arr });
@@ -74,13 +113,14 @@ export function mergeServerLogs(
 ): Record<string, LoggedValue> {
   const pid = getProfileId();
   const merged = { ...(serverLogs ?? {}), ...readLogs(program) };
+  for (const k of readTomb('logs', program)) delete merged[k]; // keep local clears
   setItem(logsKey(pid, program), JSON.stringify(merged));
   return merged;
 }
 
 export function mergeServerSets(program: string, serverSets: string[]): string[] {
   const pid = getProfileId();
-  const merged = [...new Set([...(serverSets ?? []), ...readSets(program)])];
+  const merged = withoutTombstoned('sets', program, [...(serverSets ?? []), ...readSets(program)]);
   setItem(setsKey(pid, program), JSON.stringify(merged));
   return merged;
 }

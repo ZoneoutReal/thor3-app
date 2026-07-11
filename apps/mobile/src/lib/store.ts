@@ -16,6 +16,7 @@ const PREFIX = 'thor3-';
 
 const mem = new Map<string, string>();
 let hydrated = false;
+let hydrating: Promise<void> | null = null;
 
 export function getItem(key: string): string | null {
   return mem.has(key) ? (mem.get(key) as string) : null;
@@ -36,22 +37,37 @@ export function isHydrated(): boolean {
 }
 
 // Load every persisted `thor3-` key into memory once, at app boot. Safe to call
-// repeatedly (later calls no-op). A hydration failure just starts empty; the
-// next write re-persists.
+// repeatedly (resolves immediately once loaded; concurrent calls share one load).
+//
+// Critically, `hydrated` is set ONLY after a successful read. If the disk read
+// keeps failing we retry a few times and then REJECT — we must never proceed
+// against an empty map, because the first read-modify-write (workout-log.ts)
+// would overwrite the full persisted logs/sets with a single key (permanent
+// history loss). The boot gate surfaces a retry instead (see _layout.tsx).
 export async function hydrateStore(): Promise<void> {
   if (hydrated) return;
-  try {
-    const keys = await AsyncStorage.getAllKeys();
-    const ours = keys.filter((k) => k.startsWith(PREFIX));
-    if (ours.length) {
-      const entries = await AsyncStorage.multiGet(ours);
-      for (const [k, v] of entries) {
-        if (v != null) mem.set(k, v);
+  if (hydrating) return hydrating;
+  hydrating = (async () => {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const keys = await AsyncStorage.getAllKeys();
+        const ours = keys.filter((k) => k.startsWith(PREFIX));
+        if (ours.length) {
+          const entries = await AsyncStorage.multiGet(ours);
+          for (const [k, v] of entries) {
+            if (v != null) mem.set(k, v);
+          }
+        }
+        hydrated = true;
+        return;
+      } catch (e) {
+        lastErr = e;
+        await new Promise((res) => setTimeout(res, 200 * (attempt + 1)));
       }
     }
-  } catch {
-    // start empty
-  } finally {
-    hydrated = true;
-  }
+    hydrating = null; // allow the caller to retry
+    throw lastErr instanceof Error ? lastErr : new Error('store hydration failed');
+  })();
+  return hydrating;
 }

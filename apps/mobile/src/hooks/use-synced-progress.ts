@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { getPasscode, getProfileId } from '@/lib/profiles';
 import { getItem, setItem } from '@/lib/store';
 import { pullAll, queuePush, type Snapshot } from '@/lib/sync';
+import { markTombstone, withoutTombstoned } from '@/lib/workout-log';
 
 function readDone(key: string, legacyKey: string): Set<string> {
   try {
@@ -53,10 +54,12 @@ export function useSyncedProgress(programId: string, profileId: string | null, u
         setDone((prev) => {
           const union = new Set(prev);
           mine.days.forEach((d) => union.add(d));
-          const arr = [...union];
+          // Drop days the user un-completed locally so they don't resurrect from
+          // the server row before this device's removal has synced.
+          const arr = withoutTombstoned('days', programId, union);
           setItem(key, JSON.stringify(arr));
           if (arr.length !== mine.days.length) queuePush({ days: arr });
-          return union;
+          return new Set(arr);
         });
       }
     })();
@@ -82,6 +85,7 @@ export function useSyncedProgress(programId: string, profileId: string | null, u
         const wasDone = next.has(id);
         if (wasDone) next.delete(id);
         else next.add(id);
+        markTombstone('days', programId, id, wasDone); // remember un-completes
         const arr = [...next];
         setItem(key, JSON.stringify(arr));
         // Only tag the "just finished X" hint when newly completing (not undo).
@@ -89,7 +93,7 @@ export function useSyncedProgress(programId: string, profileId: string | null, u
         return next;
       });
     },
-    [key]
+    [key, programId]
   );
 
   const isDone = useCallback((week: number, day: number) => done.has(`${week}-${day}`), [done]);
