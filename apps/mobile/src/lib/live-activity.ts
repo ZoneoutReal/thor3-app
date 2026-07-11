@@ -8,6 +8,13 @@ import type { RunActivityProps } from '@/widgets/run-activity';
 // unaffected. The @expo/ui/swift-ui component is lazy-required only inside these
 // iOS branches, so the web verification bundle never evaluates the SwiftUI shims.
 
+// Live Activities render a BLANK banner on SDK 56 (a known expo-widgets bug:
+// the widget JS runtime bundle doesn't reach the extension — expo/expo#43646,
+// partially addressed by #44065 which is already in 56.0.22 yet still broken for
+// our build). Disabled so we don't show an empty Lock Screen box; flip to true
+// to re-enable once expo-widgets ships a working bundle (likely on SDK 57).
+const LIVE_ACTIVITY_ENABLED = false;
+
 function factory(): LiveActivityFactory<RunActivityProps> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   return require('../widgets/run-activity').default;
@@ -24,7 +31,7 @@ function endAll() {
 // Start (or restart) the Lock Screen / Dynamic Island run timer. Ends any live
 // instance first so a fresh start or a restart never stacks activities.
 export function startRunActivity(props: RunActivityProps) {
-  if (Platform.OS !== 'ios') return;
+  if (!LIVE_ACTIVITY_ENABLED || Platform.OS !== 'ios') return;
   try {
     endAll();
     factory().start(props);
