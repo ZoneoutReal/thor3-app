@@ -32,6 +32,18 @@ function restSeconds(rest?: string): number | undefined {
   return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : undefined;
 }
 
+// Group consecutive rows that share a letter into supersets (2+ rows), so the
+// list can wrap them in an obvious "SUPERSET" container. Singles stand alone.
+function groupConsecutive(rows: StrengthRow[]): StrengthRow[][] {
+  const out: StrengthRow[][] = [];
+  for (const row of rows) {
+    const last = out[out.length - 1];
+    if (last && row.group && last[0].group === row.group) last.push(row);
+    else out.push([row]);
+  }
+  return out;
+}
+
 // --- Per-set completion + logged reps/weights, persisted & synced per program ---
 
 function useSetProgress(programId: string, serverSets?: string[], serverLogs?: Record<string, LoggedValue>) {
@@ -487,25 +499,45 @@ export function WorkoutMode({
                   toggle={toggle}
                 />
               ) : (
-                <View style={{ gap: 8 }}>
-                  {(day.rows ?? []).map((row, ri) => {
-                    const rounds = day.kind === 'circuit' && !row.group ? day.roundsByWeek?.[weekIndex] : undefined;
-                    const sets = parseStrengthSets(prescriptionForWeek(row, weekIndex), rounds);
+                <View style={{ gap: 12 }}>
+                  {groupConsecutive(day.rows ?? []).map((group, gi) => {
+                    const cards = group.map((row, j) => {
+                      const rounds = day.kind === 'circuit' && !row.group ? day.roundsByWeek?.[weekIndex] : undefined;
+                      const sets = parseStrengthSets(prescriptionForWeek(row, weekIndex), rounds);
+                      return (
+                        <ExerciseCard
+                          key={`${row.name}-${gi}-${j}`}
+                          row={row}
+                          sets={sets}
+                          week={targetWeek}
+                          restPrefSec={restPrefSec}
+                          idFor={(si) => `${targetWeek}|${day.label}|${row.name}|${si}`}
+                          isDone={isDone}
+                          toggle={toggle}
+                          setSet={setSet}
+                          getVal={getVal}
+                          setLog={setLog}
+                          onStartRest={startRest}
+                        />
+                      );
+                    });
+                    if (group.length < 2) {
+                      return (
+                        <View key={gi} style={{ gap: 8 }}>
+                          {cards}
+                        </View>
+                      );
+                    }
+                    // A real superset: wrap in a labeled, accent-bordered container.
+                    const roundCount = parseStrengthSets(prescriptionForWeek(group[0], weekIndex)).length;
                     return (
-                      <ExerciseCard
-                        key={`${row.name}-${ri}`}
-                        row={row}
-                        sets={sets}
-                        week={targetWeek}
-                        restPrefSec={restPrefSec}
-                        idFor={(si) => `${targetWeek}|${day.label}|${row.name}|${si}`}
-                        isDone={isDone}
-                        toggle={toggle}
-                        setSet={setSet}
-                        getVal={getVal}
-                        setLog={setLog}
-                        onStartRest={startRest}
-                      />
+                      <View key={gi} style={styles.supersetWrap}>
+                        <Text style={styles.supersetHeader}>
+                          SUPERSET{group[0].group ? ` ${group[0].group}` : ''} · {roundCount} {roundCount === 1 ? 'ROUND' : 'ROUNDS'}
+                        </Text>
+                        <Text style={styles.supersetSub}>Do one set of each, back to back, then rest.</Text>
+                        <View style={{ gap: 8, marginTop: 8 }}>{cards}</View>
+                      </View>
                     );
                   })}
                 </View>
@@ -571,6 +603,17 @@ const styles = StyleSheet.create({
   roundsText: { color: colors.success, fontSize: 12, fontWeight: '800' },
   noteText: { color: colors.muted, fontSize: 12 },
 
+  supersetWrap: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent,
+    borderTopRightRadius: 12,
+    borderBottomRightRadius: 12,
+    backgroundColor: colors.accent + '0D',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+  },
+  supersetHeader: { color: colors.accent, fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
+  supersetSub: { color: colors.muted, fontSize: 11, marginTop: 2 },
   exCard: { borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, padding: 12 },
   exHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   exGroup: { color: colors.muted, fontSize: 10, fontWeight: '800' },
