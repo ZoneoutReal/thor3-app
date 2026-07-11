@@ -59,14 +59,21 @@ export interface ProgramPosition {
 // Where the person is in their program *today*, from their start date.
 // Returns null if no start date is set or the program hasn't begun yet.
 export function currentPosition(program: Program, startISO: string | null): ProgramPosition | null {
-  if (!startISO) return null;
+  if (!startISO || !program.data.length) return null;
   const start = new Date(`${startISO}T00:00:00`);
   if (Number.isNaN(start.getTime())) return null;
 
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const daysElapsed = Math.floor((today.getTime() - start.getTime()) / 86_400_000);
-  if (daysElapsed < 0) return null; // starts in the future
+  if (today.getTime() < start.getTime()) return null; // starts in the future
+
+  // The program is weekday-locked (Mon..Sun). Anchor week boundaries to the
+  // Monday of the start week so the week index and the calendar weekday stay
+  // consistent even when the start date isn't a Monday. Round (not floor) the day
+  // span so a DST transition doesn't shave a day and roll the week over early.
+  const startDow = (start.getDay() + 6) % 7; // Mon=0..Sun=6
+  const monday = new Date(start.getFullYear(), start.getMonth(), start.getDate() - startDow);
+  const daysElapsed = Math.round((today.getTime() - monday.getTime()) / 86_400_000);
 
   const lastIdx = program.data.length - 1;
   const weekIndex = Math.min(Math.max(0, Math.floor(daysElapsed / 7)), lastIdx);

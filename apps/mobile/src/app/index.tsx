@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -30,8 +30,15 @@ import {
 } from '@/lib/program-prefs';
 import { onSyncStatus, setActiveProgram, type SyncStatus } from '@/lib/sync';
 import { colors } from '@/lib/theme';
+import { readLogs } from '@/lib/workout-log';
 
 type TabId = 'workout' | 'metrics' | 'together';
+
+// Rest days can't be completed; exclude them from any "X of N" denominator, or
+// 100% / "week complete" / "weeks done" become unreachable.
+function activeDayCount(days: { type: string }[]): number {
+  return days.filter((d) => d.type !== 'rest').length;
+}
 
 export default function Home() {
   const insets = useSafeAreaInsets();
@@ -51,6 +58,12 @@ export default function Home() {
   const [strengthWeek, setStrengthWeek] = useState<number | null>(null);
   const [restPref, setRestPrefState] = useState<number>(() => getRestPref(getProfileId()));
   const [showSettings, setShowSettings] = useState(false);
+
+  // Auto-scroll the week list to today's card (and expand it) so opening the app
+  // lands on the day you care about instead of the top of the whole week.
+  const listRef = useRef<ScrollView>(null);
+  const innerTopRef = useRef(0);
+  const scrolledForRef = useRef('');
 
   const program = getProgram(selectedProgram) ?? getProgram('10week')!;
 
@@ -82,6 +95,9 @@ export default function Home() {
   const myRow = snapshot?.progress.find((p) => p.profile === myProfileId && p.program === selectedProgram);
   const serverLogs = myRow?.logs ?? {};
   const serverSets = myRow?.sets ?? [];
+  // Local store wins for the duration badge so a just-finished time shows without
+  // waiting for the next server pull.
+  const localLogs = readLogs(selectedProgram);
 
   // Keep the background push queue routed to the program on screen.
   useEffect(() => {
@@ -174,7 +190,7 @@ export default function Home() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.weekBar}>
               {program.data.map((w, i) => {
                 const wDone = w.days.filter((d) => isDone(w.week, d.day)).length;
-                const allDone = wDone === w.days.length;
+                const allDone = wDone === activeDayCount(w.days);
                 const active = weekIdx === i;
                 return (
                   <Pressable
@@ -200,7 +216,7 @@ export default function Home() {
                     </Text>
                     {wDone > 0 ? (
                       <Text style={[styles.weekPillCount, { color: active ? colors.accent : allDone ? colors.success : colors.muted }]}>
-                        {wDone}/{w.days.length}
+                        {wDone}/{activeDayCount(w.days)}
                       </Text>
                     ) : null}
                   </Pressable>
@@ -210,7 +226,7 @@ export default function Home() {
           </View>
 
           {/* Week content */}
-          <ScrollView style={styles.list} contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 80 }]}>
+          <ScrollView ref={listRef} style={styles.list} contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 80 }]}>
             <View style={styles.weekHeadRow}>
               <Text style={styles.weekTitle}>Week {week.week}</Text>
               <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -229,21 +245,39 @@ export default function Home() {
               </View>
             </View>
 
-            <WeekProgress total={week.days.length} completed={weekCompleted} />
+            <WeekProgress total={activeDayCount(week.days)} completed={weekCompleted} />
 
-            <View style={{ marginTop: 16, gap: 8 }}>
+            <View
+              onLayout={(e) => {
+                innerTopRef.current = e.nativeEvent.layout.y;
+              }}
+              style={{ marginTop: 16, gap: 8 }}>
               {week.days.map((day) => {
-                const durV = serverLogs[`session-dur-${week.week}-${day.day}`]?.v;
+                const isToday = position?.todayId === `${week.week}-${day.day}`;
+                const durV =
+                  localLogs[`session-dur-${week.week}-${day.day}`]?.v ??
+                  serverLogs[`session-dur-${week.week}-${day.day}`]?.v;
                 return (
                   <DayCard
-                    key={day.day}
+                    key={`${week.week}-${day.day}`}
                     workout={day}
                     isDone={isDone(week.week, day.day)}
-                    isToday={position?.todayId === `${week.week}-${day.day}`}
+                    isToday={isToday}
+                    defaultExpanded={isToday}
                     durationSec={durV ? parseInt(durV, 10) : undefined}
                     onToggle={() => toggle(week.week, day.day, workoutLabel(day))}
                     onOpenLogger={() => setLoggerDay({ week: week.week, day: day.day })}
                     onOpenStrength={() => setStrengthWeek(week.week)}
+                    onMeasureTop={
+                      isToday
+                        ? (y) => {
+                            const target = `${anchorKey}|${weekIdx}`;
+                            if (scrolledForRef.current === target) return;
+                            scrolledForRef.current = target;
+                            listRef.current?.scrollTo({ y: Math.max(0, innerTopRef.current + y - 12), animated: true });
+                          }
+                        : undefined
+                    }
                   />
                 );
               })}
@@ -267,7 +301,14 @@ export default function Home() {
         </View>
       ) : (
         <View style={styles.placeholder}>
-          <Text style={styles.placeholderText}>Loading progress...</Text>
+          <Text style={styles.placeholderText}>{refreshing ? 'Loading progress...' : "Couldn't load progress."}</Text>
+          {!refreshing ? (
+            <Pressable
+              onPress={refresh}
+              style={{ marginTop: 12, backgroundColor: colors.accent, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10 }}>
+              <Text style={{ color: '#000', fontWeight: '600' }}>Retry</Text>
+            </Pressable>
+          ) : null}
         </View>
       )}
 
@@ -371,19 +412,23 @@ function DayCard({
   isDone,
   isToday = false,
   durationSec,
+  defaultExpanded = false,
   onToggle,
   onOpenLogger,
   onOpenStrength,
+  onMeasureTop,
 }: {
   workout: DayWorkout;
   isDone: boolean;
   isToday?: boolean;
   durationSec?: number;
+  defaultExpanded?: boolean;
   onToggle: () => void;
   onOpenLogger: () => void;
   onOpenStrength: () => void;
+  onMeasureTop?: (y: number) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const meta = TYPE_META[workout.type];
   const isRest = workout.type === 'rest';
 
@@ -397,7 +442,9 @@ function DayCard({
   const backgroundColor = isDone ? colors.success + '08' : expanded ? meta.color + '08' : colors.card;
 
   return (
-    <View style={[styles.card, { borderColor, backgroundColor, borderWidth: isToday ? 2 : 1 }]}>
+    <View
+      onLayout={onMeasureTop ? (e) => onMeasureTop(e.nativeEvent.layout.y) : undefined}
+      style={[styles.card, { borderColor, backgroundColor, borderWidth: isToday ? 2 : 1 }]}>
       <Pressable onPress={() => !isRest && setExpanded(!expanded)} style={styles.cardHead}>
         <View style={[styles.cardIcon, { backgroundColor: meta.color + '20' }]}>
           <Text style={styles.cardIconText}>{isDone ? '✓' : meta.icon}</Text>

@@ -89,8 +89,10 @@ function LineChart({ series }: { series: Series }) {
   const min = Math.min(...ys);
   const max = Math.max(...ys);
   const range = max - min || 1;
+  const flat = max === min; // a flat series would otherwise draw right on the x-axis
   const x = (i: number) => padX + (i * (W - 2 * padX)) / (points.length - 1);
-  const y = (n: number) => padTop + (1 - (n - min) / range) * (H - padTop - padBot);
+  const y = (n: number) =>
+    flat ? padTop + (H - padTop - padBot) / 2 : padTop + (1 - (n - min) / range) * (H - padTop - padBot);
   const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(p.n).toFixed(1)}`).join(' ');
   const last = points[points.length - 1];
 

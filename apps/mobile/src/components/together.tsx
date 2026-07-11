@@ -5,6 +5,7 @@ import { PersonDetail } from '@/components/person-detail';
 import { getProgram } from '@/lib/program-data';
 import type { Snapshot } from '@/lib/sync';
 import { colors } from '@/lib/theme';
+import { readLogs, readSets } from '@/lib/workout-log';
 
 function timeAgo(iso: string | undefined, now: number): string {
   if (!iso) return 'no activity yet';
@@ -36,7 +37,9 @@ export function Together({
 }) {
   const program = getProgram(programId) ?? getProgram('10week')!;
   const weeks = program.data;
-  const total = weeks.reduce((s, w) => s + w.days.length, 0);
+  // Rest days can't be completed, so they must not inflate the denominator or
+  // "100% / weeks done" and the green heat cells become unreachable.
+  const total = weeks.reduce((s, w) => s + w.days.filter((d) => d.type !== 'rest').length, 0);
   // eslint-disable-next-line react-hooks/purity
   const now = Date.now(); // "active X ago" is cosmetic; recomputed each render
 
@@ -51,7 +54,7 @@ export function Together({
     const days = new Set(pr.id === myProfileId ? myDays : (row?.days ?? []));
     const perWeek = weeks.map((w) => ({
       week: w.week,
-      total: w.days.length,
+      total: w.days.filter((d) => d.type !== 'rest').length,
       done: w.days.filter((d) => days.has(`${w.week}-${d.day}`)).length,
     }));
     const doneCount = perWeek.reduce((s, w) => s + w.done, 0);
@@ -143,8 +146,8 @@ export function Together({
         <PersonDetail
           profile={detailProfile}
           days={detailProfile.id === myProfileId ? myDays : (detailRow?.days ?? [])}
-          sets={detailRow?.sets ?? []}
-          logs={detailRow?.logs ?? {}}
+          sets={detailProfile.id === myProfileId ? readSets(programId) : (detailRow?.sets ?? [])}
+          logs={detailProfile.id === myProfileId ? readLogs(programId) : (detailRow?.logs ?? {})}
           programId={programId}
           isMe={detailProfile.id === myProfileId}
           onClose={() => setDetailId(null)}
