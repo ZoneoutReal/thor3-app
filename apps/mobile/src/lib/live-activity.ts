@@ -8,12 +8,16 @@ import type { RunActivityProps } from '@/widgets/run-activity';
 // unaffected. The @expo/ui/swift-ui component is lazy-required only inside these
 // iOS branches, so the web verification bundle never evaluates the SwiftUI shims.
 
-// Live Activities render a BLANK banner on SDK 56 (a known expo-widgets bug:
-// the widget JS runtime bundle doesn't reach the extension — expo/expo#43646,
-// partially addressed by #44065 which is already in 56.0.22 yet still broken for
-// our build). Disabled so we don't show an empty Lock Screen box; flip to true
-// to re-enable once expo-widgets ships a working bundle (likely on SDK 57).
-const LIVE_ACTIVITY_ENABLED = false;
+// Live Activities are wired through expo-widgets' '/widget/' directive: the
+// babel-preset-expo `widgets-plugin` stringifies the RunActivity layout at build
+// time, createLiveActivity() stores that string in the App Group, and the widget
+// extension reads + renders it. That plugin only runs when babel-preset-expo is
+// applied, which requires apps/mobile/babel.config.js — a file this project was
+// scaffolded without (mirrored from Rallo, which has no babel config and no
+// expo-widgets). Without it Metro compiled RunActivity as a plain React
+// component instead of a stringified layout, so nothing reached the extension and
+// the banner rendered blank. babel.config.js now supplies the preset; enabled.
+const LIVE_ACTIVITY_ENABLED = true;
 
 function factory(): LiveActivityFactory<RunActivityProps> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
