@@ -231,7 +231,11 @@ export function StrengthSheet({
           </View>
         </View>
 
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + 40 }]}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + 40 }]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag">
           <WarmUp />
           {mode === 'workout' ? (
             initialHasBlock ? (

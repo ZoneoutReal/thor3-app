@@ -553,7 +553,10 @@ export function DayLogger({
       {/* Finish confirmation: review/edit the counted time (or type it in). */}
       {confirming ? (
         <Pressable style={styles.sheetScrim} onPress={() => setConfirming(false)}>
-          <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 24 }]} onPress={(e) => e.stopPropagation()}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ width: '100%' }}>
+            <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 24 }]} onPress={(e) => e.stopPropagation()}>
             <View style={styles.sheetGrip} />
             <Text style={styles.sheetTitle}>Finish workout</Text>
             <Text style={styles.sheetSub}>
@@ -586,7 +589,8 @@ export function DayLogger({
                 <Text style={styles.sheetConfirmText}>Confirm & finish</Text>
               </Pressable>
             </View>
-          </Pressable>
+            </Pressable>
+          </KeyboardAvoidingView>
         </Pressable>
       ) : null}
 

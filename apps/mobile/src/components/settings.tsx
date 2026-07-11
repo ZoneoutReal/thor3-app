@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { programs } from '@/lib/program-data';
@@ -25,6 +25,20 @@ const REST_PRESETS: { label: string; sec: number }[] = [
   { label: '2:00', sec: 120 },
   { label: '3:00', sec: 180 },
 ];
+
+// The reminder fires in the device's local time zone (server-side, via the
+// profile tz). Label the picker with that zone rather than a hardcoded "Central".
+const TZ_LABEL = (() => {
+  try {
+    return (
+      new Intl.DateTimeFormat('en-US', { timeZoneName: 'short' })
+        .formatToParts(new Date())
+        .find((p) => p.type === 'timeZoneName')?.value ?? 'local'
+    );
+  } catch {
+    return 'local';
+  }
+})();
 
 export function Settings({
   myProfile,
@@ -106,7 +120,17 @@ export function Settings({
               value={dateText}
               onChangeText={(v) => {
                 setDateText(v);
-                if (v === '' || /^\d{4}-\d{2}-\d{2}$/.test(v)) onStartDateChange(v);
+                if (v === '') {
+                  onStartDateChange('');
+                } else if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+                  // Only accept real calendar dates (reject 2026-13-45, 2026-02-31)
+                  // by checking the parsed date round-trips to the same string.
+                  const d = new Date(`${v}T00:00:00`);
+                  const iso = Number.isNaN(d.getTime())
+                    ? ''
+                    : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                  if (iso === v) onStartDateChange(v);
+                }
               }}
               placeholder="YYYY-MM-DD"
               placeholderTextColor={colors.muted}
@@ -143,7 +167,9 @@ export function Settings({
                         ? 'Available once Rukr is installed from the app build.'
                         : pushState === 'denied'
                           ? 'Blocked. Enable notifications for Rukr in Settings.'
-                          : 'Get daily workout reminders even when the app is closed.'}
+                          : pushState === 'error'
+                            ? "Couldn't turn on reminders. Try again."
+                            : 'Get daily workout reminders even when the app is closed.'}
                 </Text>
               </View>
               {pushState === 'enabled' ? (
@@ -169,7 +195,15 @@ export function Settings({
               )}
             </View>
             {pushState === 'enabled' ? (
-              <Pressable onPress={() => void testDevicePush()} style={styles.testBtn}>
+              <Pressable
+                onPress={async () => {
+                  const r = await testDevicePush();
+                  Alert.alert(
+                    r.success ? 'Test sent' : "Couldn't send test",
+                    r.success ? 'Check your lock screen.' : (r.error ?? 'Try again.')
+                  );
+                }}
+                style={styles.testBtn}>
                 <Text style={styles.testText}>Send test</Text>
               </Pressable>
             ) : null}
@@ -224,7 +258,7 @@ export function Settings({
                       </Pressable>
                     );
                   })}
-                  <Text style={styles.central}>Central</Text>
+                  <Text style={styles.central}>{TZ_LABEL}</Text>
                 </View>
               </>
             ) : null}

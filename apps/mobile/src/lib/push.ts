@@ -76,7 +76,16 @@ export async function enableDevicePush(): Promise<PushState> {
     const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId: pid });
     if (!token) return 'error';
     setItem(TOKEN_KEY, token);
-    if (!DEV_BYPASS) await callPush({ action: 'subscribe-expo', token, profile: getProfileId() });
+    if (!DEV_BYPASS) {
+      // Don't fake success: if the backend hasn't shipped the Expo-push actions
+      // yet (or rejects), drop the token and report the failure so the UI never
+      // claims reminders are on when they can't actually arrive.
+      const r = await callPush({ action: 'subscribe-expo', token, profile: getProfileId() });
+      if (!r.success) {
+        removeItem(TOKEN_KEY);
+        return 'error';
+      }
+    }
     return 'enabled';
   } catch {
     return 'error';

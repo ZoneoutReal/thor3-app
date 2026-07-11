@@ -101,6 +101,19 @@ export function Gate({
         ) : (
           <View style={styles.form}>
             <Text style={styles.pickTitle}>Who&apos;s training?</Text>
+            {profiles.length === 0 ? (
+              <>
+                <Text style={styles.hint}>No profiles are set up for this code yet.</Text>
+                <Pressable
+                  onPress={() => {
+                    setStep('code');
+                    setError('');
+                  }}
+                  style={styles.cancelBtn}>
+                  <Text style={styles.cancelText}>Re-enter code</Text>
+                </Pressable>
+              </>
+            ) : null}
             {profiles.map((p) => (
               <Pressable key={p.id} onPress={() => pick(p)} style={styles.profileRow}>
                 <View style={styles.avatar}>
