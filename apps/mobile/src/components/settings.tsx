@@ -40,6 +40,24 @@ const TZ_LABEL = (() => {
   }
 })();
 
+// The field shows/accepts US MM/DD/YYYY; storage + the rest of the app stay on
+// ISO YYYY-MM-DD.
+function isoToUS(iso: string | null): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso ?? '');
+  return m ? `${m[2]}/${m[3]}/${m[1]}` : '';
+}
+function usToIso(us: string): string | null {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(us.trim());
+  if (!m) return null;
+  const mm = +m[1];
+  const dd = +m[2];
+  const yyyy = +m[3];
+  const d = new Date(yyyy, mm - 1, dd);
+  // Reject impossible dates (13/40/2026, 02/31/2026) via a round-trip check.
+  if (d.getFullYear() !== yyyy || d.getMonth() !== mm - 1 || d.getDate() !== dd) return null;
+  return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+}
+
 export function Settings({
   myProfile,
   programId,
@@ -77,7 +95,7 @@ export function Settings({
     setActivity(myProfile.activity_notify);
   }
 
-  const [dateText, setDateText] = useState(startDate ?? '');
+  const [dateText, setDateText] = useState(isoToUS(startDate));
   const [pushState, setPushState] = useState<PushState | 'idle'>(hasDevicePush() ? 'enabled' : 'idle');
   const [busy, setBusy] = useState(false);
 
@@ -115,24 +133,22 @@ export function Settings({
 
             {/* Start date */}
             <Text style={styles.sectionLabel}>Start date</Text>
-            <Text style={styles.hint}>The Monday of Week 1. Anchors &ldquo;Today&rdquo; to the right week and day.</Text>
+            <Text style={styles.hint}>When you started Week 1 (MM/DD/YYYY). Anchors &ldquo;Today&rdquo; to the right week and day.</Text>
             <TextInput
               value={dateText}
               onChangeText={(v) => {
                 setDateText(v);
-                if (v === '') {
+                const t = v.trim();
+                if (t === '') {
                   onStartDateChange('');
-                } else if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
-                  // Only accept real calendar dates (reject 2026-13-45, 2026-02-31)
-                  // by checking the parsed date round-trips to the same string.
-                  const d = new Date(`${v}T00:00:00`);
-                  const iso = Number.isNaN(d.getTime())
-                    ? ''
-                    : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                  if (iso === v) onStartDateChange(v);
+                  return;
                 }
+                // Save only once it's a real MM/DD/YYYY date; partial typing is left alone.
+                const iso = usToIso(t);
+                if (iso) onStartDateChange(iso);
               }}
-              placeholder="YYYY-MM-DD"
+              placeholder="MM/DD/YYYY"
+              keyboardType="numbers-and-punctuation"
               placeholderTextColor={colors.muted}
               autoCapitalize="none"
               autoCorrect={false}

@@ -87,7 +87,7 @@ export default function Home() {
   );
 
   const weekCompleted = week.days.filter((d) => isDone(week.week, d.day)).length;
-  const totalDays = program.data.reduce((sum, w) => sum + w.days.length, 0);
+  const totalDays = program.data.reduce((sum, w) => sum + activeDayCount(w.days), 0);
 
   const myProfile = snapshot?.profiles.find((p) => p.id === myProfileId);
   const firstName = myProfile?.display_name.split(' ')[0] ?? '';
