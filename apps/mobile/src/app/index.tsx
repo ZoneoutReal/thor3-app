@@ -40,6 +40,12 @@ function activeDayCount(days: { type: string }[]): number {
   return days.filter((d) => d.type !== 'rest').length;
 }
 
+// A program day that has strength work (a pure strength day, or a mixed day whose
+// session references the strength sheet). Used to map a program day to its sheet day.
+function isStrengthDay(d: DayWorkout): boolean {
+  return d.type === 'strength' || d.sessions.some((s) => s.description.some((line) => /strength training/i.test(line)));
+}
+
 export default function Home() {
   const insets = useSafeAreaInsets();
 
@@ -141,6 +147,13 @@ export default function Home() {
   const loggerWorkout = loggerDay
     ? program.data.find((x) => x.week === loggerDay.week)?.days.find((x) => x.day === loggerDay.day)
     : null;
+  // Which strength-sheet day this program day is: its position among the week's
+  // strength days (1st strength day -> Day 1, etc.).
+  const loggerWeekData = loggerDay ? program.data.find((x) => x.week === loggerDay.week) : null;
+  const strengthDayIdx =
+    loggerWeekData && loggerWorkout
+      ? Math.max(0, loggerWeekData.days.filter(isStrengthDay).findIndex((d) => d.day === loggerWorkout.day))
+      : 0;
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -333,7 +346,7 @@ export default function Home() {
           day={loggerWorkout}
           week={loggerDay.week}
           programId={selectedProgram}
-          strengthDayIndex={0}
+          strengthDayIndex={strengthDayIdx}
           typeLabel={TYPE_META[loggerWorkout.type].label}
           dayComplete={isDone(loggerDay.week, loggerDay.day)}
           serverLogs={serverLogs}

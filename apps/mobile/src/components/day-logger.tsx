@@ -13,10 +13,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { WarmUp } from '@/components/warm-up';
+import { WorkoutMode } from '@/components/workout-mode';
 import { fmtClock, fmtDuration, pacePerMile, parseDay, type DayStep } from '@/lib/day-steps';
 import { beep, unlockAudio, vibrate } from '@/lib/feedback';
 import { endRunActivity, startRunActivity } from '@/lib/live-activity';
-import type { DayWorkout } from '@/lib/program-data';
+import { getStrengthBlockForWeek, type DayWorkout } from '@/lib/program-data';
 import type { LoggedValue } from '@/lib/sync';
 import { colors } from '@/lib/theme';
 import { mergeServerLogs, mergeServerSets, writeLog, writeSetDone } from '@/lib/workout-log';
@@ -292,6 +293,7 @@ export function DayLogger({
   day,
   week,
   programId,
+  strengthDayIndex,
   typeLabel,
   dayComplete,
   serverLogs,
@@ -315,6 +317,7 @@ export function DayLogger({
   const insets = useSafeAreaInsets();
   const { logs, done, setLog, toggleDone, lastValue } = useWorkoutLog(programId, serverLogs, serverSets);
   const sessions = parseDay(day);
+  const strengthBlock = getStrengthBlockForWeek(week);
 
   const noteKey = `note-${week}-${day.day}`;
   const rpeKey = `rpe-${week}-${day.day}`;
@@ -488,11 +491,21 @@ export function DayLogger({
                     );
                   }
                   if (step.kind === 'strength') {
-                    // Phase 3 embeds the loggable strength sets here; for now, jump
-                    // to the full sheet.
-                    return (
+                    // Embed the strength workout inline (no extra "open the sheet" hop).
+                    return strengthBlock ? (
+                      <View key={step.id} style={{ marginTop: 4 }}>
+                        <WorkoutMode
+                          block={strengthBlock}
+                          programId={programId}
+                          lockWeek={week}
+                          singleDayIndex={strengthDayIndex}
+                          serverLogs={serverLogs}
+                          serverSets={serverSets}
+                        />
+                      </View>
+                    ) : (
                       <Pressable key={step.id} onPress={onOpenStrength} style={styles.strengthBtn}>
-                        <Text style={styles.strengthBtnText}>🏋️ Open strength sheet →</Text>
+                        <Text style={styles.strengthBtnText}>Strength for week {week} isn&rsquo;t in the app yet →</Text>
                       </Pressable>
                     );
                   }
