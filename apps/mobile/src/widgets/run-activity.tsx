@@ -14,14 +14,16 @@ export type RunActivityProps = {
   label: string; //     e.g. "Week 3 · Run"
 };
 
-// ActivityKit caps a Live Activity at ~8h; the timer text counts up toward this
-// upper bound. A run left paused past the cap ends gracefully server-agnostic.
-const CAP_MS = 8 * 60 * 60 * 1000;
-const ACCENT = '#d97706';
-const MUTED = '#9b9ba3';
-
 const RunActivity = (props: RunActivityProps, _env: LiveActivityEnvironment) => {
   'widget';
+  // These MUST be declared inside the widget function. The babel widgets-plugin
+  // stringifies this function in isolation, and the widget extension evals that
+  // string with ONLY the @expo/ui component + modifier globals in scope (see
+  // expo-widgets/bundle/index.ts). Any module-level reference (a hoisted const,
+  // import, or helper) is undefined in that scope and silently blanks the banner.
+  const CAP_MS = 8 * 60 * 60 * 1000; // ActivityKit caps a Live Activity at ~8h; the timer counts up toward this bound
+  const ACCENT = '#d97706';
+  const MUTED = '#9b9ba3';
   const range = { lower: new Date(props.startedAt), upper: new Date(props.startedAt + CAP_MS) };
   return {
     banner: (
