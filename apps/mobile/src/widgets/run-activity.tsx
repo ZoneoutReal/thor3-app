@@ -1,5 +1,5 @@
 import { HStack, Image, Spacer, Text, VStack } from '@expo/ui/swift-ui';
-import { font, foregroundStyle, frame, padding } from '@expo/ui/swift-ui/modifiers';
+import { font, foregroundStyle, frame, multilineTextAlignment, padding } from '@expo/ui/swift-ui/modifiers';
 import { createLiveActivity, type LiveActivityEnvironment } from 'expo-widgets';
 
 // The iOS Live Activity for a workout session (Lock Screen banner + Dynamic
@@ -69,7 +69,7 @@ const RunActivity = (props: RunActivityProps, _env: LiveActivityEnvironment) => 
         {showTotal ? (
           <VStack alignment="trailing" spacing={1}>
             <Text modifiers={[font({ size: 11, weight: 'semibold' }), foregroundStyle(MUTED)]}>TOTAL</Text>
-            <Text timerInterval={totalRange} countsDown={false} modifiers={[font({ size: 22, weight: 'semibold' }), foregroundStyle(FG)]} />
+            <Text timerInterval={totalRange} countsDown={false} modifiers={[font({ size: 22, weight: 'semibold' }), foregroundStyle(FG), multilineTextAlignment('trailing')]} />
           </VStack>
         ) : null}
       </HStack>
@@ -94,7 +94,7 @@ const RunActivity = (props: RunActivityProps, _env: LiveActivityEnvironment) => 
         {showTotal ? (
           <VStack alignment="trailing" spacing={1}>
             <Text modifiers={[font({ size: 11, weight: 'semibold' }), foregroundStyle(MUTED)]}>TOTAL</Text>
-            <Text timerInterval={totalRange} countsDown={false} modifiers={[font({ size: 22, weight: 'semibold' }), foregroundStyle(FG)]} />
+            <Text timerInterval={totalRange} countsDown={false} modifiers={[font({ size: 22, weight: 'semibold' }), foregroundStyle(FG), multilineTextAlignment('trailing')]} />
           </VStack>
         ) : null}
       </HStack>
