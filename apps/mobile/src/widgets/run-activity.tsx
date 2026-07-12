@@ -42,7 +42,7 @@ const RunActivity = (props: RunActivityProps, _env: LiveActivityEnvironment) => 
   const workStart = props.phase === 'rest' && restEndsAt ? restEndsAt : props.phaseStartedAt || props.startedAt;
 
   const accent = resting ? REST : WORK;
-  const leftLabel = resting ? (props.exercise ? 'REST · ' + props.exercise : 'REST') : props.exercise || 'WORKING';
+  const leftLabel = resting ? (props.exercise ? 'REST · ' + props.exercise : 'REST') : props.exercise || props.label;
   // Show TOTAL on the right whenever there's real workout structure (an exercise,
   // a rest, or a work phase that started after the session did). Pure run days
   // stay a single running clock.
@@ -71,7 +71,9 @@ const RunActivity = (props: RunActivityProps, _env: LiveActivityEnvironment) => 
             <Text modifiers={[font({ size: 11, weight: 'semibold' }), foregroundStyle(MUTED)]}>TOTAL</Text>
             <Text timerInterval={totalRange} countsDown={false} modifiers={[font({ size: 22, weight: 'semibold' }), foregroundStyle(FG), multilineTextAlignment('trailing')]} />
           </VStack>
-        ) : null}
+        ) : (
+          <Spacer />
+        )}
       </HStack>
     ),
     compactLeading: <Image systemName={resting ? 'pause.fill' : 'figure.run'} color={accent} />,
@@ -96,7 +98,9 @@ const RunActivity = (props: RunActivityProps, _env: LiveActivityEnvironment) => 
             <Text modifiers={[font({ size: 11, weight: 'semibold' }), foregroundStyle(MUTED)]}>TOTAL</Text>
             <Text timerInterval={totalRange} countsDown={false} modifiers={[font({ size: 22, weight: 'semibold' }), foregroundStyle(FG), multilineTextAlignment('trailing')]} />
           </VStack>
-        ) : null}
+        ) : (
+          <Spacer />
+        )}
       </HStack>
     ),
   };
