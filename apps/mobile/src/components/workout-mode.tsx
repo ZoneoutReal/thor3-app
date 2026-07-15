@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppState, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { SupersetRunner } from '@/components/superset-runner';
 import { beep, unlockAudio, vibrate } from '@/lib/feedback';
@@ -12,7 +12,7 @@ import {
   type StrengthRow,
 } from '@/lib/program-data';
 import { getProfileId } from '@/lib/profiles';
-import { getRestPref } from '@/lib/program-prefs';
+import { getRestPref, getSupersetStyle, setSupersetStyle, type SupersetStyle } from '@/lib/program-prefs';
 import type { LoggedValue } from '@/lib/sync';
 import { colors } from '@/lib/theme';
 import { mergeServerLogs, mergeServerSets, writeLog, writeSetDone } from '@/lib/workout-log';
@@ -384,6 +384,12 @@ export function WorkoutMode({
   const { isDone, toggle, set: setSet, setLog, getVal } = useSetProgress(programId, serverSets, serverLogs);
 
   const [restPrefSec] = useState(() => getRestPref(getProfileId()));
+  const [supersetStyle, setSupersetStyleState] = useState<SupersetStyle>(() => getSupersetStyle(getProfileId()));
+  const chooseSupersetStyle = (style: SupersetStyle) => {
+    setSupersetStyleState(style);
+    const pid = getProfileId();
+    if (pid) setSupersetStyle(pid, style);
+  };
   const [runnerDay, setRunnerDay] = useState<StrengthDay | null>(null);
   const [rest, setRest] = useState<{ total: number; remaining: number; exercise: string; endsAt: number } | null>(null);
   // Keep the latest onActivity in a ref so the timer effects/callbacks below can
@@ -437,11 +443,23 @@ export function WorkoutMode({
   }, [rest]);
 
   const startRest = useCallback((seconds?: number, exercise?: string) => {
-    if (seconds && seconds > 0) {
-      unlockAudio();
-      const endsAt = Date.now() + seconds * 1000;
-      setRest({ total: seconds, remaining: seconds, exercise: exercise ?? '', endsAt });
-      onActivityRef.current?.({ phase: 'rest', exercise: exercise ?? '', phaseStartedAt: 0, restEndsAt: endsAt });
+    if (!seconds || seconds <= 0) return;
+    unlockAudio();
+    const ex = exercise ?? '';
+    const endsAt = Date.now() + seconds * 1000;
+    // The Live Activity (native, no view controller) can update right away.
+    onActivityRef.current?.({ phase: 'rest', exercise: ex, phaseStartedAt: 0, restEndsAt: endsAt });
+    // The in-app rest bar is a Modal. A set's checkmark is usually tapped with the
+    // reps keyboard still up, and presenting a Modal in the same frame iOS is
+    // animating the keyboard away can wedge the view hierarchy and freeze the app
+    // (intermittent by nature). If the keyboard is up, dismiss it first and present
+    // the bar once it has settled so the two transitions never overlap.
+    const present = () => setRest({ total: seconds, remaining: seconds, exercise: ex, endsAt });
+    if (Keyboard.isVisible?.()) {
+      Keyboard.dismiss();
+      setTimeout(present, 320);
+    } else {
+      present();
     }
   }, []);
 
@@ -499,6 +517,7 @@ export function WorkoutMode({
         {daysToShow.map((day) => {
           const ids = setIdsForDay(day);
           const doneCount = ids.filter(isDone).length;
+          const hasSuperset = groupConsecutive(day.rows ?? []).some((g) => g.length >= 2);
           return (
             <View key={day.label}>
               <View style={styles.dayHead}>
@@ -510,6 +529,27 @@ export function WorkoutMode({
                   {doneCount}/{ids.length}
                 </Text>
               </View>
+
+              {/* Superset style: keep the pairing, but choose alternating vs. one
+                  exercise at a time (crowded-gym mode). Only meaningful when the day
+                  actually pairs exercises. */}
+              {hasSuperset ? (
+                <View style={styles.styleToggle}>
+                  <Text style={styles.styleToggleLabel}>Supersets</Text>
+                  <View style={styles.segment}>
+                    <Pressable
+                      onPress={() => chooseSupersetStyle('superset')}
+                      style={[styles.segBtn, supersetStyle === 'superset' && styles.segBtnOn]}>
+                      <Text style={[styles.segText, supersetStyle === 'superset' && styles.segTextOn]}>Superset</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => chooseSupersetStyle('straight')}
+                      style={[styles.segBtn, supersetStyle === 'straight' && styles.segBtnOn]}>
+                      <Text style={[styles.segText, supersetStyle === 'straight' && styles.segTextOn]}>One at a time</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
 
               {day.kind === 'table' && day.rows && day.rows.length ? (
                 <Pressable
@@ -575,7 +615,11 @@ export function WorkoutMode({
                         <Text style={styles.supersetHeader}>
                           SUPERSET{group[0].group ? ` ${group[0].group}` : ''} · {roundCount} {roundCount === 1 ? 'ROUND' : 'ROUNDS'}
                         </Text>
-                        <Text style={styles.supersetSub}>Do one set of each, back to back, then rest.</Text>
+                        <Text style={styles.supersetSub}>
+                          {supersetStyle === 'straight'
+                            ? 'One at a time: finish all sets of one, then the next.'
+                            : 'Do one set of each, back to back, then rest.'}
+                        </Text>
                         <View style={{ gap: 8, marginTop: 8 }}>{cards}</View>
                       </View>
                     );
@@ -626,6 +670,7 @@ export function WorkoutMode({
           weekIndex={weekIndex}
           programId={programId}
           restPrefSec={restPrefSec}
+          supersetStyle={supersetStyle}
           serverLogs={serverLogs}
           serverSets={serverSets}
           onClose={() => setRunnerDay(null)}
@@ -643,6 +688,14 @@ const styles = StyleSheet.create({
   pillActive: { backgroundColor: colors.accent + '30', borderColor: colors.accent + '50' },
   pillIdle: { backgroundColor: colors.card, borderColor: 'transparent' },
   pillText: { fontSize: 12, fontWeight: '700' },
+
+  styleToggle: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  styleToggleLabel: { color: colors.muted, fontSize: 12, fontWeight: '700' },
+  segment: { flexDirection: 'row', backgroundColor: colors.card, borderRadius: 9, borderWidth: 1, borderColor: colors.border, padding: 2 },
+  segBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 7 },
+  segBtnOn: { backgroundColor: colors.accent },
+  segText: { color: colors.muted, fontSize: 12, fontWeight: '700' },
+  segTextOn: { color: '#000' },
 
   dayHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   dayBadge: { backgroundColor: colors.accent + '22', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 },

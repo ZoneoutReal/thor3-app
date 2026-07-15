@@ -10,6 +10,7 @@ import { getItem, removeItem, setItem } from './store';
 const PROGRAM_KEY = 'thor3-program'; // -> `thor3-program-<profileId>`
 const START_KEY = 'thor3-start'; //    -> `thor3-start-<profileId>` (YYYY-MM-DD)
 const REST_KEY = 'thor3-rest'; //      -> `thor3-rest-<profileId>` (seconds; 0 = program default)
+const SUPERSET_KEY = 'thor3-superset'; // -> `thor3-superset-<profileId>` ('straight'; unset = superset)
 
 export const DEFAULT_PROGRAM = '10week';
 
@@ -35,6 +36,22 @@ export function getRestPref(profileId: string | null): number {
 export function setRestPref(profileId: string, seconds: number) {
   if (seconds > 0) setItem(`${REST_KEY}-${profileId}`, String(seconds));
   else removeItem(`${REST_KEY}-${profileId}`);
+}
+
+// How paired (superset) exercises are run. 'superset' (the default) alternates one
+// set of each back-to-back, then rests. 'straight' finishes every set of one
+// exercise before the next in the pair — for a crowded gym where you can't hold two
+// stations at once. The A/B pairing is kept either way; only the order changes.
+export type SupersetStyle = 'superset' | 'straight';
+
+export function getSupersetStyle(profileId: string | null): SupersetStyle {
+  if (!profileId) return 'superset';
+  return getItem(`${SUPERSET_KEY}-${profileId}`) === 'straight' ? 'straight' : 'superset';
+}
+
+export function setSupersetStyle(profileId: string, style: SupersetStyle) {
+  if (style === 'straight') setItem(`${SUPERSET_KEY}-${profileId}`, 'straight');
+  else removeItem(`${SUPERSET_KEY}-${profileId}`);
 }
 
 // The calendar day (local) the person began week 1. Empty string clears it.

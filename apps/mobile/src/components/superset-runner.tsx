@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { beep, unlockAudio, vibrate } from '@/lib/feedback';
 import { parseStrengthSets, prescriptionForWeek, type StrengthDay, type StrengthRow } from '@/lib/program-data';
+import type { SupersetStyle } from '@/lib/program-prefs';
 import type { LoggedValue } from '@/lib/sync';
 import { colors } from '@/lib/theme';
 import { mergeServerLogs, mergeServerSets, writeLog, writeSetDone } from '@/lib/workout-log';
@@ -36,42 +37,77 @@ function toGroups(rows: StrengthRow[]): StrengthRow[][] {
 
 type Step = {
   gi: number; // group index
-  round: number; // 0-based round within the group
-  rounds: number; // total rounds in the group
-  posInGroup: number; // 1-based exercise position this round
-  groupSize: number; // active exercises this round
+  round: number; // 0-based SET index of this exercise (drives the persisted set id)
+  rounds: number; // total sets, for the headline
+  posInGroup: number; // 1-based exercise position in the pair
+  groupSize: number; // exercises in the pair (active this round, superset mode)
   isSuperset: boolean;
+  style: SupersetStyle;
+  groupLabel?: string; // the pairing letter, e.g. "B"
   row: StrengthRow;
   target: string; // the set's prescribed label, e.g. "15", "12 ea", "MAX"
   timedSec?: number; // present for a timed set (plank etc.)
-  restAfter?: number; // seconds to rest after logging this set (last of the group's round)
+  restAfter?: number; // seconds to rest after logging this set
+  headline: string; // "Round 2 of 3" (superset) | "Set 2 of 3" (straight)
 };
 
-// Flatten the day into an ordered list of "log this set" steps: for each group,
-// each round does one set of every exercise in the group, then rests.
-function buildSteps(day: StrengthDay, weekIndex: number, restPrefSec: number): Step[] {
+// Flatten the day into an ordered list of "log this set" steps. The pairing is
+// kept either way; only the ORDER differs:
+//  - 'superset': each round does one set of every exercise in the group, then rests.
+//  - 'straight': finish every set of one exercise (resting between) before the next
+//    in the pair — for a crowded gym where you can't hold two stations.
+// The set id (`week|day|name|setIndex`) is identical in both, so progress carries
+// over if the style is switched mid-workout.
+function buildSteps(day: StrengthDay, weekIndex: number, restPrefSec: number, style: SupersetStyle): Step[] {
   const steps: Step[] = [];
   for (const [gi, group] of toGroups(day.rows ?? []).entries()) {
     const setsByRow = group.map((row) => parseStrengthSets(prescriptionForWeek(row, weekIndex)));
     const rounds = Math.max(1, ...setsByRow.map((s) => s.length));
     const isSuperset = group.length > 1;
+    const groupLabel = group[0].group;
     const groupRest = restPrefSec > 0 ? restPrefSec : restSeconds(group[group.length - 1].rest);
-    for (let round = 0; round < rounds; round++) {
-      const active = group.map((row, i) => ({ row, set: setsByRow[i][round] })).filter((x) => x.set);
-      active.forEach(({ row, set }, j) => {
-        steps.push({
-          gi,
-          round,
-          rounds,
-          posInGroup: j + 1,
-          groupSize: active.length,
-          isSuperset,
-          row,
-          target: set.label,
-          timedSec: set.seconds,
-          restAfter: j === active.length - 1 ? groupRest : undefined,
+
+    if (style === 'straight') {
+      group.forEach((row, ri) => {
+        setsByRow[ri].forEach((set, setIdx) => {
+          steps.push({
+            gi,
+            round: setIdx,
+            rounds: setsByRow[ri].length,
+            posInGroup: ri + 1,
+            groupSize: group.length,
+            isSuperset,
+            style,
+            groupLabel,
+            row,
+            target: set.label,
+            timedSec: set.seconds,
+            restAfter: groupRest, // rest after every straight set
+            headline: `Set ${setIdx + 1} of ${setsByRow[ri].length}`,
+          });
         });
       });
+    } else {
+      for (let round = 0; round < rounds; round++) {
+        const active = group.map((row, i) => ({ row, set: setsByRow[i][round] })).filter((x) => x.set);
+        active.forEach(({ row, set }, j) => {
+          steps.push({
+            gi,
+            round,
+            rounds,
+            posInGroup: j + 1,
+            groupSize: active.length,
+            isSuperset,
+            style,
+            groupLabel,
+            row,
+            target: set.label,
+            timedSec: set.seconds,
+            restAfter: j === active.length - 1 ? groupRest : undefined,
+            headline: `Round ${round + 1} of ${rounds}`,
+          });
+        });
+      }
     }
   }
   return steps;
@@ -83,6 +119,7 @@ export function SupersetRunner({
   weekIndex,
   programId,
   restPrefSec,
+  supersetStyle,
   serverLogs,
   serverSets,
   onClose,
@@ -92,12 +129,16 @@ export function SupersetRunner({
   weekIndex: number;
   programId: string;
   restPrefSec: number;
+  supersetStyle: SupersetStyle;
   serverLogs?: Record<string, LoggedValue>;
   serverSets?: string[];
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  const steps = useMemo(() => buildSteps(day, weekIndex, restPrefSec), [day, weekIndex, restPrefSec]);
+  const steps = useMemo(
+    () => buildSteps(day, weekIndex, restPrefSec, supersetStyle),
+    [day, weekIndex, restPrefSec, supersetStyle]
+  );
 
   const [done, setDone] = useState<Set<string>>(() => new Set(mergeServerSets(programId, serverSets ?? [])));
   const [logs, setLogs] = useState<Record<string, LoggedValue>>(() => mergeServerLogs(programId, serverLogs ?? {}));
@@ -107,7 +148,7 @@ export function SupersetRunner({
 
   const [cursor, setCursor] = useState(() => {
     // Resume at the first not-yet-done set.
-    const built = buildSteps(day, weekIndex, restPrefSec);
+    const built = buildSteps(day, weekIndex, restPrefSec, supersetStyle);
     const doneSet = new Set(mergeServerSets(programId, serverSets ?? []));
     const idx = built.findIndex((s) => !doneSet.has(`${week}|${day.label}|${s.row.name}|${s.round}`));
     return idx < 0 ? 0 : idx;
@@ -162,8 +203,13 @@ export function SupersetRunner({
     }
   }
   const isLastStep = cursor === steps.length - 1;
-  const isLastInRound = step.posInGroup === step.groupSize;
-  const btnLabel = isLastStep ? 'Log & Finish' : isLastInRound ? 'Log & Rest' : 'Log & Next Exercise';
+  const btnLabel = isLastStep
+    ? 'Log & Finish'
+    : step.restAfter && step.restAfter > 0
+      ? 'Log & Rest'
+      : step.style === 'straight'
+        ? 'Log & Next Set'
+        : 'Log & Next Exercise';
 
   const advance = () => {
     if (isLastStep) {
@@ -216,7 +262,7 @@ export function SupersetRunner({
             <Text style={styles.restClock}>{mmss(restLeft)}</Text>
             {nextStep ? (
               <Text style={styles.nextUp}>
-                Next: Round {nextStep.round + 1} · {nextStep.row.name}
+                Next: {nextStep.row.name} · {nextStep.headline}
               </Text>
             ) : null}
             <Pressable onPress={skipRest} style={styles.skipBtn}>
@@ -228,13 +274,13 @@ export function SupersetRunner({
             {step.isSuperset ? (
               <View style={styles.supersetTag}>
                 <Text style={styles.supersetTagText}>
-                  {step.row.group ? `SUPERSET ${step.row.group}` : 'SUPERSET'} · EXERCISE {step.posInGroup} OF {step.groupSize}
+                  {step.style === 'straight' ? 'PAIR' : 'SUPERSET'}
+                  {step.groupLabel ? ` ${step.groupLabel}` : ''} · EXERCISE {step.posInGroup} OF {step.groupSize}
+                  {step.style === 'straight' ? ' · STRAIGHT' : ''}
                 </Text>
               </View>
             ) : null}
-            <Text style={styles.roundText}>
-              Round {step.round + 1} of {step.rounds}
-            </Text>
+            <Text style={styles.roundText}>{step.headline}</Text>
             <Text style={styles.exName}>{step.row.name}</Text>
             <Text style={styles.targetText}>Target: {step.target}</Text>
 
