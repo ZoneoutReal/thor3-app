@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { NumericDoneAccessory, NUMERIC_ACCESSORY_ID } from '@/components/numeric-done-accessory';
 import { SupersetRunner } from '@/components/superset-runner';
 import { beep, unlockAudio, vibrate } from '@/lib/feedback';
 import {
@@ -185,6 +186,7 @@ function RepSetRow({
         value={reps}
         onChangeText={onReps}
         keyboardType="number-pad"
+        inputAccessoryViewID={NUMERIC_ACCESSORY_ID}
         placeholder={defaultReps(target) || target}
         placeholderTextColor={colors.muted}
         style={[styles.repInput, { color: repsGhost ? colors.muted : colors.foreground }]}
@@ -195,6 +197,7 @@ function RepSetRow({
         value={weight}
         onChangeText={onWeight}
         keyboardType="decimal-pad"
+        inputAccessoryViewID={NUMERIC_ACCESSORY_ID}
         placeholder="–"
         placeholderTextColor={colors.muted}
         style={[styles.wtInput, { color: weightGhost ? colors.muted : colors.foreground }]}
@@ -676,6 +679,8 @@ export function WorkoutMode({
           onClose={() => setRunnerDay(null)}
         />
       ) : null}
+
+      <NumericDoneAccessory />
     </View>
   );
 }

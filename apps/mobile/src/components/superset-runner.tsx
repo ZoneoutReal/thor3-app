@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Keyboard, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { NumericDoneAccessory, NUMERIC_ACCESSORY_ID } from '@/components/numeric-done-accessory';
 import { beep, unlockAudio, vibrate } from '@/lib/feedback';
 import { parseStrengthSets, prescriptionForWeek, type StrengthDay, type StrengthRow } from '@/lib/program-data';
 import type { SupersetStyle } from '@/lib/program-prefs';
@@ -270,7 +271,9 @@ export function SupersetRunner({
             </Pressable>
           </View>
         ) : (
-          <View style={{ flex: 1, paddingHorizontal: 20, justifyContent: 'center', gap: 18 }}>
+          <Pressable
+            onPress={() => Keyboard.dismiss()}
+            style={{ flex: 1, paddingHorizontal: 20, justifyContent: 'center', gap: 18 }}>
             {step.isSuperset ? (
               <View style={styles.supersetTag}>
                 <Text style={styles.supersetTagText}>
@@ -293,6 +296,7 @@ export function SupersetRunner({
                     value={loggedReps || def}
                     onChangeText={(v) => setLog(sid, v)}
                     keyboardType="number-pad"
+                    inputAccessoryViewID={NUMERIC_ACCESSORY_ID}
                     placeholder={def || step.target}
                     placeholderTextColor={colors.muted}
                     style={[styles.bigInput, { color: !loggedReps && def ? colors.muted : colors.foreground }]}
@@ -305,6 +309,7 @@ export function SupersetRunner({
                     value={loggedWt || carryWt}
                     onChangeText={(v) => setLog(wtKey, v)}
                     keyboardType="decimal-pad"
+                    inputAccessoryViewID={NUMERIC_ACCESSORY_ID}
                     placeholder="–"
                     placeholderTextColor={colors.muted}
                     style={[styles.bigInput, { color: !loggedWt && carryWt ? colors.muted : colors.foreground }]}
@@ -313,7 +318,7 @@ export function SupersetRunner({
                 </View>
               </View>
             )}
-          </View>
+          </Pressable>
         )}
 
         {!rest ? (
@@ -323,6 +328,8 @@ export function SupersetRunner({
             </Pressable>
           </View>
         ) : null}
+
+        <NumericDoneAccessory />
       </View>
     </Modal>
   );
