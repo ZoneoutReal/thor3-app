@@ -1,0 +1,84 @@
+{
+  "expo": {
+    "name": "Rukr",
+    "slug": "rukr",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "rukr",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#111113",
+    "ios": {
+      "bundleIdentifier": "com.thetotemworks.rukr",
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.thetotemworks.rukr",
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#111113",
+          "imageWidth": 120
+        }
+      ],
+      "expo-notifications",
+      [
+        "expo-widgets",
+        {
+          "groupIdentifier": "group.com.thetotemworks.rukr",
+          "enablePushNotifications": false,
+          "widgets": [
+            {
+              "name": "RunTimer",
+              "displayName": "Run Timer",
+              "description": "Live running timer on the Lock Screen and Dynamic Island",
+              "supportedFamilies": [
+                "accessoryCircular",
+                "accessoryRectangular",
+                "accessoryInline"
+              ]
+            }
+          ]
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "ExpoWidgetsTarget",
+                  "bundleIdentifier": "com.thetotemworks.rukr.ExpoWidgetsTarget",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.thetotemworks.rukr"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "projectId": "b7224e08-e2e4-491e-a799-05bf4564ee10"
+      }
+    },
+    "owner": "totemworksllc"
+  }
+}
